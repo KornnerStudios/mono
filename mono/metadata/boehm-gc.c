@@ -265,6 +265,22 @@ mono_object_is_alive (MonoObject* o)
 
 #ifdef USE_INCLUDED_LIBGC
 
+static void on_gc_dump_heap_section(GC_PTR user_data, GC_PTR start, GC_PTR end)
+{
+	mono_profiler_gc_boehm_dump_heap_section(start, end);
+}
+static void on_gc_dump_heap_section_block(GC_PTR user_data, GC_PTR block, size_t block_size, size_t obj_size, unsigned char obj_kind, unsigned char flags)
+{
+	if (flags & 0x1) // don't dump IS_FREE blocks
+		return;
+
+	mono_profiler_gc_boehm_dump_heap_section_block(block, block_size, obj_size, obj_kind, flags);
+}
+static void on_gc_dump_static_roots(GC_PTR user_data, GC_PTR start, GC_PTR end)
+{
+	mono_profiler_gc_boehm_dump_static_root_set(start, end);
+}
+
 static gint64 gc_start_time;
 
 static void
@@ -286,6 +302,20 @@ on_gc_notification (GCEventType event)
 		mono_trace_message (MONO_TRACE_GC, "gc took %d usecs", (mono_100ns_ticks () - gc_start_time) / 10);
 	}
 	mono_profiler_gc_event ((MonoGCEvent) event, 0);
+
+	// BOSSFIGHT: dump heap after reclamation has finished
+	if (event == MONO_GC_EVENT_RECLAIM_END && mono_profiler_get_events() & MONO_PROFILER_GC_BOEHM_DUMP_EVENTS)
+	{
+		mono_profiler_gc_boehm_dump_begin();
+
+		GC_heap_sections_foreach(NULL,
+			on_gc_dump_heap_section, on_gc_dump_heap_section_block);
+
+		GC_static_roots_foreach(NULL,
+			on_gc_dump_static_roots);
+
+		mono_profiler_gc_boehm_dump_end();
+	}
 }
  
 static void
@@ -420,15 +450,27 @@ mono_gc_alloc_fixed (size_t size, void *descr)
 		return GC_MALLOC (size);
 	*/
 
+	// BOSSFIGHT: malloc catch-all
+	void* ptr;
 	if (descr)
-		return GC_MALLOC_EXPLICITLY_TYPED (size, (GC_descr)descr);
+	{
+		ptr = GC_MALLOC_EXPLICITLY_TYPED (size, (GC_descr)descr);
+	}
 	else
-		return GC_MALLOC (size);
+		ptr = GC_MALLOC (size);
+
+	mono_profiler_gc_boehm_fixed_allocation(ptr, size);
+	return ptr;
 }
 
 void
 mono_gc_free_fixed (void* addr)
 {
+	// BOSSFIGHT: free catch-all.
+	size_t size = (mono_profiler_get_events() & MONO_PROFILER_GC_BOEHM_EVENTS) != 0
+		? 0
+		: GC_size(addr);
+	mono_profiler_gc_boehm_fixed_free(addr, size);
 }
 
 int

@@ -99,6 +99,68 @@ word blocks_needed;
 #   define IS_MAPPED(hhdr) 1
 # endif /* USE_MUNMAP */
 
+// BOSSFIGHT: begin
+#include <assert.h>
+void GC_heap_sections_foreach (GC_PTR user_data, GC_heap_section_proc callback, GC_heap_section_block_proc blocks_callback)
+{
+	unsigned i;
+	ptr_t start, end;
+	ptr_t p;
+	size_t bytes;
+	hdr *hhdr;
+	size_t obj_size, block_size;
+	GC_bool block_is_free;
+
+	if (callback == NULL && blocks_callback == NULL)
+		return;
+
+	for (i = 0; i < GC_n_heap_sects; ++i)
+	{
+		start = GC_heap_sects[i].hs_start;
+		bytes = GC_heap_sects[i].hs_bytes;
+		end = start + bytes;
+		// Merge in contiguous sections.
+		while (i + 1 < GC_n_heap_sects && GC_heap_sects[i + 1].hs_start == end)
+		{
+			++i;
+			end = GC_heap_sects[i].hs_start + GC_heap_sects[i].hs_bytes;
+		}
+
+		if (callback != NULL)
+			callback(user_data, start, end);
+
+		if (blocks_callback == NULL)
+			continue;
+
+		for (p = start; p < end;)
+		{
+			hhdr = HDR(p);
+			if (IS_FORWARDING_ADDR_OR_NIL(hhdr))
+			{
+				assert(!"Missing header!!");
+				p += HBLKSIZE;
+				continue;
+			}
+
+			obj_size = WORDS_TO_BYTES(hhdr->hb_sz);
+			block_size = HBLKSIZE * OBJ_SZ_TO_BLOCKS(hhdr->hb_sz);
+			block_is_free = HBLK_IS_FREE(hhdr);
+
+			blocks_callback(user_data, p, block_size, obj_size, hhdr->hb_obj_kind, block_is_free);
+
+			if (block_is_free)
+				p += hhdr->hb_sz;
+			else
+				p += HBLKSIZE * OBJ_SZ_TO_BLOCKS(hhdr->hb_sz);
+		}
+
+		// signal section block iteration is finished
+		if (callback != NULL)
+			callback(user_data, (ptr_t)-1, (ptr_t)-1);
+	}
+}
+// BOSSFIGHT: end
+
 # if !defined(NO_DEBUGGING)
 void GC_print_hblkfreelist()
 {

@@ -94,6 +94,22 @@ struct _ProfilerDesc {
 	MonoProfilerCodeChunkNew code_chunk_new;
 	MonoProfilerCodeChunkDestroy code_chunk_destroy;
 	MonoProfilerCodeBufferNew code_buffer_new;
+
+	// BOSSFIGHT:
+	MonoProfileGCBoehmFixedAllocFunc gc_boehm_fixed_alloc_cb;
+	MonoProfileGCBoehmFixedFreeFunc gc_boehm_fixed_free_cb;
+
+	MonoProfileGCBoehmDumpFunc gc_boehm_dump_begin_cb;
+	MonoProfileGCBoehmDumpFunc gc_boehm_dump_end_cb;
+	MonoProfileGCBoehmDumpHeapSectionFunc gc_boehm_dump_heap_section_cb;
+	MonoProfileGCBoehmDumpHeapSectionBlockFunc gc_boehm_dump_heap_section_block_cb;
+	MonoProfileGCBoehmDumpStaticRootFunc gc_boehm_dump_static_roots_cb;
+
+	MonoProfileClassVTableFunc class_vtable_created_cb;
+	MonoProfileClassStaticsAllocFunc class_statics_alloc_cb;
+
+	MonoProfileThreadTableAllocFunc thread_table_alloc_cb;
+	MonoProfileThreadStaticsAllocFunc thread_statics_alloc_cb;
 };
 
 static ProfilerDesc *prof_list = NULL;
@@ -842,6 +858,157 @@ mono_profiler_code_buffer_new (gpointer buffer, int size, MonoProfilerCodeBuffer
 			prof->code_buffer_new (prof->profiler, buffer, size, type, data);
 	}
 }
+
+// BOSSFIGHT: begin
+void mono_profiler_install_gc_boehm(MonoProfileGCBoehmFixedAllocFunc alloc_callback, MonoProfileGCBoehmFixedFreeFunc free_callback)
+{
+	if (!prof_list)
+		return;
+	prof_list->gc_boehm_fixed_alloc_cb = alloc_callback;
+	prof_list->gc_boehm_fixed_free_cb = free_callback;
+}
+void mono_profiler_gc_boehm_fixed_allocation(gpointer address, size_t size)
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILER_GC_BOEHM_EVENTS) && prof->gc_boehm_fixed_alloc_cb)
+			prof->gc_boehm_fixed_alloc_cb(prof->profiler, address, size);
+	}
+}
+void mono_profiler_gc_boehm_fixed_free(gpointer address, size_t size)
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILER_GC_BOEHM_EVENTS) && prof->gc_boehm_fixed_free_cb)
+			prof->gc_boehm_fixed_free_cb(prof->profiler, address, size);
+	}
+}
+
+void mono_profiler_install_gc_boehm_dump(MonoProfileGCBoehmDumpFunc begin_callback, MonoProfileGCBoehmDumpFunc end_callback,
+	MonoProfileGCBoehmDumpHeapSectionFunc section_callback, MonoProfileGCBoehmDumpHeapSectionBlockFunc section_block_callback, MonoProfileGCBoehmDumpStaticRootFunc root_set_callback)
+{
+	if (!prof_list)
+		return;
+	prof_list->gc_boehm_dump_begin_cb = begin_callback;
+	prof_list->gc_boehm_dump_end_cb = end_callback;
+
+	prof_list->gc_boehm_dump_heap_section_cb = section_callback;
+	prof_list->gc_boehm_dump_heap_section_block_cb = section_block_callback;
+	prof_list->gc_boehm_dump_static_roots_cb = root_set_callback;
+}
+void mono_profiler_gc_boehm_dump_begin()
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILER_GC_BOEHM_DUMP_EVENTS) && prof->gc_boehm_dump_begin_cb)
+			prof->gc_boehm_dump_begin_cb(prof->profiler);
+	}
+}
+void mono_profiler_gc_boehm_dump_end()
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILER_GC_BOEHM_DUMP_EVENTS) && prof->gc_boehm_dump_end_cb)
+			prof->gc_boehm_dump_end_cb(prof->profiler);
+	}
+}
+void mono_profiler_gc_boehm_dump_heap_section(gpointer start, gpointer end)
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILER_GC_BOEHM_DUMP_EVENTS) && prof->gc_boehm_dump_heap_section_cb)
+			prof->gc_boehm_dump_heap_section_cb(prof->profiler, start, end);
+	}
+}
+void mono_profiler_gc_boehm_dump_heap_section_block(gpointer base_address, size_t block_size, size_t object_size, guint8 block_kind, guint8 flags)
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILER_GC_BOEHM_DUMP_EVENTS) && prof->gc_boehm_dump_heap_section_block_cb)
+			prof->gc_boehm_dump_heap_section_block_cb(prof->profiler, base_address, block_size, object_size, block_kind, flags);
+	}
+}
+void mono_profiler_gc_boehm_dump_static_root_set(gpointer start, gpointer end)
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILER_GC_BOEHM_DUMP_EVENTS) && prof->gc_boehm_dump_static_roots_cb)
+			prof->gc_boehm_dump_static_roots_cb(prof->profiler, start, end);
+	}
+}
+
+void mono_profiler_install_class_vtable_created(MonoProfileClassVTableFunc callback)
+{
+	if (!prof_list)
+		return;
+	prof_list->class_vtable_created_cb = callback;
+}
+void mono_profiler_class_vtable_created(MonoDomain* domain, MonoClass* klass, MonoVTable* vtable)
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		// using ALLOCATIONS event because, why not, and vtable values are useful in scanning heap dumps
+		if ((prof->events & MONO_PROFILE_ALLOCATIONS) && prof->class_vtable_created_cb)
+			prof->class_vtable_created_cb(prof->profiler, domain, klass, vtable);
+	}
+}
+
+void mono_profiler_install_class_statics_allocation(MonoProfileClassStaticsAllocFunc callback)
+{
+	if (!prof_list)
+		return;
+	prof_list->class_statics_alloc_cb = callback;
+}
+void mono_profiler_class_statics_allocation(MonoDomain* domain, MonoClass* klass, gpointer data, size_t data_size)
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILE_ALLOCATIONS) && prof->class_statics_alloc_cb)
+			prof->class_statics_alloc_cb(prof->profiler, domain, klass, data, data_size);
+	}
+}
+
+void mono_profiler_install_thread_table_allocation(MonoProfileThreadTableAllocFunc callback)
+{
+	if (!prof_list)
+		return;
+	prof_list->thread_table_alloc_cb = callback;
+}
+void mono_profiler_thread_table_allocation(MonoThread** table, size_t table_count, size_t table_size)
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILE_ALLOCATIONS) && prof->thread_table_alloc_cb)
+			prof->thread_table_alloc_cb(prof->profiler, table, table_count, table_size);
+	}
+}
+
+void mono_profiler_install_thread_statics_allocation(MonoProfileThreadStaticsAllocFunc callback)
+{
+	if (!prof_list)
+		return;
+	prof_list->thread_statics_alloc_cb = callback;
+}
+void mono_profiler_thread_statics_allocation(gpointer data, size_t data_size)
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILE_ALLOCATIONS) && prof->thread_statics_alloc_cb)
+			prof->thread_statics_alloc_cb(prof->profiler, data, data_size);
+	}
+}
+// BOSSFIGHT: end
 
 static GHashTable *coverage_hash = NULL;
 

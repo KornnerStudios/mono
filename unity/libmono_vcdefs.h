@@ -9,7 +9,15 @@
 #pragma warning(disable:4700) // local variable used without being initialized
 #pragma warning(disable:4715) // not all control paths return a value
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "unity_utils.h"
+
+#ifdef __cplusplus
+}
+#endif
 
 // redefine exit() to be unity_mono_exit()
 #define exit unity_mono_exit

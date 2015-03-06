@@ -592,6 +592,17 @@ void mono_unity_liveness_start_gc_world ()
 	GC_start_world_external ();
 }
 
+void mono_unity_liveness_mark_classes_for_intptr_scanning (MonoClass* filter)
+{
+	filter->has_unity_native_intptr = 1;
+}
+
+gboolean mono_unity_liveness_has_parent_class (MonoObject* object, MonoClass* base_klass)
+{
+	MonoClass* object_klass = GET_VTABLE(object)->klass;
+	return mono_class_has_parent(object_klass, base_klass);
+}
+
 LivenessState* mono_unity_liveness_calculation_begin (MonoClass* filter, guint max_count, register_object_callback callback, void* callback_userdata)
 {
 	LivenessState* state = mono_unity_liveness_allocate_struct (filter, max_count, callback, callback_userdata);

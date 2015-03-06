@@ -661,6 +661,19 @@ mono_class_get_generic_class (MonoClass *klass)
 	return klass->generic_class;
 }
 
+// BOSSFIGHT: begin
+gboolean mono_bf_class_has_references(const MonoClass* klass)
+{
+	g_assert(klass);
+	return klass->has_references;
+}
+gboolean mono_bf_class_has_static_references(const MonoClass* klass)
+{
+	g_assert(klass);
+	return klass->has_static_refs;
+}
+// BOSSFIGHT: end
+
 gboolean
 mono_class_is_generic (MonoClass *klass)
 {

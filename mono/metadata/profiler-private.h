@@ -74,5 +74,20 @@ void mono_profiler_code_buffer_new (gpointer buffer, int size, MonoProfilerCodeB
 
 void mono_profiler_runtime_initialized (void) MONO_INTERNAL;
 
+
+// BOSSFIGHT: helper profiler functions
+void mono_profiler_gc_boehm_fixed_allocation(gpointer address, size_t size) MONO_INTERNAL;
+void mono_profiler_gc_boehm_fixed_free(gpointer address, size_t size) MONO_INTERNAL;
+void mono_profiler_gc_boehm_dump_begin() MONO_INTERNAL;
+void mono_profiler_gc_boehm_dump_end() MONO_INTERNAL;
+void mono_profiler_gc_boehm_dump_heap_section(gpointer start, gpointer end) MONO_INTERNAL;
+void mono_profiler_gc_boehm_dump_heap_section_block(gpointer base_address, size_t block_size, size_t object_size, guint8 block_kind, guint8 flags) MONO_INTERNAL;
+void mono_profiler_gc_boehm_dump_static_root_set(gpointer start, gpointer end) MONO_INTERNAL;
+void mono_profiler_class_vtable_created(MonoDomain* domain, MonoClass* klass, MonoVTable* vtable) MONO_INTERNAL;
+// only called on allocations performed in the GC (ie, klass->has_static_refs)
+void mono_profiler_class_statics_allocation(MonoDomain* domain, MonoClass* klass, gpointer data, size_t data_size) MONO_INTERNAL;
+void mono_profiler_thread_table_allocation(MonoThread** table, size_t table_count, size_t table_size) MONO_INTERNAL;
+void mono_profiler_thread_statics_allocation(gpointer data, size_t data_size) MONO_INTERNAL;
+
 #endif /* __MONO_PROFILER_PRIVATE_H__ */
 

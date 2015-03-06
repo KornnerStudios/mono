@@ -101,6 +101,13 @@ void mono_unity_write_to_unity_log(MonoString* str)
 void mono_unity_set_embeddinghostname(const char* name)
 {
 	gEmbeddingHostName = g_string_new(name);
+
+	// BOSSFIGHT: doing this here as this is one of the earliest calls Unity makes (happens right after mono_profiler_startup())
+	// Tried doing this right before mini_init's return stmt but it causes a hang/deadlock.
+	// Said func is invoked by Unity's call to mono_jit_init_version in InitializeMonoFromMain(...),
+	// but the call to this __func__ takes place only a few calls later (after mono_thread_set_main).
+	// I suppose this could also be called inside mono_thread_set_main...
+	heap_boss_startup("heap-boss");
 }
 
 

@@ -39,6 +39,21 @@ static int n_root_sets = 0;
 
 	/* GC_static_roots[0..n_root_sets) contains the valid root sets. */
 
+// BOSSFIGHT: begin
+void GC_static_roots_foreach(GC_PTR user_data, GC_static_roots_proc callback)
+{
+	int i;
+
+	if (callback == NULL)
+		return;
+
+	for (i = 0; i < n_root_sets; i++)
+	{
+		callback(user_data, GC_static_roots[i].r_start, GC_static_roots[i].r_end);
+	}
+}
+// BOSSFIGHT: end
+
 # if !defined(NO_DEBUGGING)
 /* For debugging:	*/
 void GC_print_static_roots()

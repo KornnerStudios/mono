@@ -118,6 +118,13 @@ mono_class_is_subclass_of (MonoClass *klass, MonoClass *klassc,
 gboolean
 mono_class_is_assignable_from (MonoClass *klass, MonoClass *oklass);
 
+// BOSSFIGHT: begin
+// it has GC-tracked references in the instance
+gboolean mono_bf_class_has_references(const MonoClass* klass);
+// it has static fields that are GC-tracked
+gboolean mono_bf_class_has_static_references(const MonoClass* klass);
+// BOSSFIGHT: end
+
 gboolean
 mono_class_is_generic (MonoClass *klass);
 

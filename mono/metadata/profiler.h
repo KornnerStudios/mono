@@ -27,7 +27,11 @@ typedef enum {
 	MONO_PROFILE_METHOD_EVENTS    = 1 << 16,
 	MONO_PROFILE_MONITOR_EVENTS   = 1 << 17,
 	MONO_PROFILE_IOMAP_EVENTS = 1 << 18, /* this should likely be removed, too */
-	MONO_PROFILE_GC_MOVES = 1 << 19
+	MONO_PROFILE_GC_MOVES = 1 << 19,
+
+	// BOSSFIGHT
+	MONO_PROFILER_GC_BOEHM_EVENTS = 1 << 20,
+	MONO_PROFILER_GC_BOEHM_DUMP_EVENTS = 1 << 21,
 } MonoProfileFlags;
 
 typedef enum {
@@ -167,6 +171,32 @@ void mono_profiler_install_code_chunk_destroy (MonoProfilerCodeChunkDestroy call
 void mono_profiler_install_code_buffer_new (MonoProfilerCodeBufferNew callback);
 
 void mono_profiler_load             (const char *desc);
+
+
+// BOSSFIGHT:
+//typedef void (*MonoProfile Func)(MonoProfiler* prof, );
+typedef void (*MonoProfileGCBoehmFixedAllocFunc)(MonoProfiler* prof, gpointer address, size_t size);
+typedef void (*MonoProfileGCBoehmFixedFreeFunc)(MonoProfiler* prof, gpointer address, size_t size);
+void mono_profiler_install_gc_boehm(MonoProfileGCBoehmFixedAllocFunc alloc_callback, MonoProfileGCBoehmFixedFreeFunc free_callback);
+
+typedef void (*MonoProfileGCBoehmDumpFunc)(MonoProfiler* prof);
+typedef void (*MonoProfileGCBoehmDumpHeapSectionFunc)(MonoProfiler* prof, gpointer start, gpointer end);
+typedef void (*MonoProfileGCBoehmDumpHeapSectionBlockFunc)(MonoProfiler* prof, gpointer base_address, size_t block_size, size_t object_size, guint8 block_kind, guint8 flags);
+typedef void (*MonoProfileGCBoehmDumpStaticRootFunc)(MonoProfiler* prof, gpointer start, gpointer end);
+void mono_profiler_install_gc_boehm_dump(MonoProfileGCBoehmDumpFunc begin_callback, MonoProfileGCBoehmDumpFunc end_callback,
+	MonoProfileGCBoehmDumpHeapSectionFunc section_callback, MonoProfileGCBoehmDumpHeapSectionBlockFunc section_block_callback, MonoProfileGCBoehmDumpStaticRootFunc root_set_callback);
+
+typedef void (*MonoProfileClassVTableFunc)(MonoProfiler* prof, MonoDomain* domain, MonoClass* klass, MonoVTable* vtable);
+void mono_profiler_install_class_vtable_created(MonoProfileClassVTableFunc callback);
+
+typedef void (*MonoProfileClassStaticsAllocFunc)(MonoProfiler* prof, MonoDomain* domain, MonoClass* klass, gpointer data, size_t data_size);
+void mono_profiler_install_class_statics_allocation(MonoProfileClassStaticsAllocFunc callback);
+
+typedef void (*MonoProfileThreadTableAllocFunc)(MonoProfiler* prof, MonoThread** table, size_t table_count, size_t table_size);
+void mono_profiler_install_thread_table_allocation(MonoProfileThreadTableAllocFunc callback);
+
+typedef void (*MonoProfileThreadStaticsAllocFunc)(MonoProfiler* prof, gpointer data, size_t data_size);
+void mono_profiler_install_thread_statics_allocation(MonoProfileThreadStaticsAllocFunc callback);
 
 G_END_DECLS
 

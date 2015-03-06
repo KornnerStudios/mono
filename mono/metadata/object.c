@@ -1845,6 +1845,9 @@ mono_class_create_runtime_vtable (MonoDomain *domain, MonoClass *class, gboolean
 	vt->rank = class->rank;
 	vt->domain = domain;
 
+	// BOSSFIGHT: Knowing the vtable address can help spot objects when scanning the heap
+	mono_profiler_class_vtable_created(domain, class, vt);
+
 	mono_class_compute_gc_descriptor (class);
 		/*
 		 * We can't use typed allocation in the non-root domains, since the
@@ -1879,6 +1882,10 @@ mono_class_create_runtime_vtable (MonoDomain *domain, MonoClass *class, gboolean
 			mono_domain_add_class_static_data (domain, class, vt->data, NULL);
 			if (bitmap != default_bitmap)
 				g_free (bitmap);
+
+			// BOSSFIGHT: track static fields allocations
+			if (G_UNLIKELY(profile_allocs))
+				mono_profiler_class_statics_allocation(domain, class, vt->data, class_size);
 		} else {
 			vt->data = mono_domain_alloc0 (domain, class_size);
 		}
@@ -4599,8 +4606,9 @@ mono_value_box (MonoDomain *domain, MonoClass *class, gpointer value)
 		return NULL;
 	size = mono_class_instance_size (class);
 	res = mono_object_new_alloc_specific (vtable);
-	if (G_UNLIKELY (profile_allocs))
-		mono_profiler_allocation (res, class);
+	// BOSSFIGHT: avoid duplicate alloc notification when boxing (mono_object_new_alloc_specific already does this)
+//	if (G_UNLIKELY (profile_allocs))
+//		mono_profiler_allocation (res, class);
 
 	size = size - sizeof (MonoObject);
 

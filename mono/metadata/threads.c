@@ -323,6 +323,8 @@ small_id_alloc (MonoThread *thread)
 	if (!small_id_table) {
 		small_id_table_size = 2;
 		small_id_table = mono_gc_alloc_fixed (small_id_table_size * sizeof (MonoThread*), NULL);
+		// BOSSFIGHT:
+		mono_profiler_thread_table_allocation(small_id_table, 0, small_id_table_size);
 	}
 	for (i = small_id_next; i < small_id_table_size; ++i) {
 		if (!small_id_table [i]) {
@@ -349,6 +351,8 @@ small_id_alloc (MonoThread *thread)
 		mono_gc_free_fixed (small_id_table);
 		small_id_table = new_table;
 		small_id_table_size = new_size;
+		// BOSSFIGHT:
+		mono_profiler_thread_table_allocation(small_id_table, id + 1, small_id_table_size);
 	}
 	thread->small_id = id;
 	g_assert (small_id_table [id] == NULL);

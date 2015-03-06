@@ -961,6 +961,18 @@ extern void GC_thr_init(void);	/* Needed for Solaris/X86	*/
 
 #define UNITY_USE_REASONABLE_LOOKING_GCROOTS_CODEPATH_ON_WINDOWS 1
 
+// BOSSFIGHT: begin
+typedef void (*GC_static_roots_proc)
+	GC_PROTO((GC_PTR user_data, GC_PTR start, GC_PTR end));
+GC_API void GC_static_roots_foreach GC_PROTO((GC_PTR user_data, GC_static_roots_proc callback));
+
+typedef void (*GC_heap_section_proc)
+	GC_PROTO((GC_PTR user_data, GC_PTR start, GC_PTR end));
+typedef void (*GC_heap_section_block_proc)
+	GC_PROTO((GC_PTR user_data, GC_PTR block, size_t block_size, size_t obj_size, unsigned char obj_kind, unsigned char flags));
+GC_API void GC_heap_sections_foreach GC_PROTO((GC_PTR user_data, GC_heap_section_proc callback, GC_heap_section_block_proc blocks_callback));
+// BOSSFIGHT: end
+
  /*
   * Fully portable code should call GC_INIT() from the main program
   * before making any other GC_ calls.  On most platforms this is a
