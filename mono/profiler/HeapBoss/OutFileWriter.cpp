@@ -25,11 +25,11 @@ OutfileWriter* outfile_writer_open(
 	memset(&ofw->total, 0, sizeof(ofw->total));
 
 #if FALSE
-	ofw->out = iosfopen(filename, "w+");
+	ofw->out = iosfopen(filename, "wb+");
 #elif WIN32
-	ofw->out = unity_fopen(filename, "w+");
+	ofw->out = unity_fopen(filename, "wb+");
 #else
-	ofw->out = fopen(filename, "w+");
+	ofw->out = fopen(filename, "wb+");
 #endif
 	assert(ofw->out);
 
@@ -64,7 +64,7 @@ void outfile_writer_close(
 	write_time(ofw->out, timestamp);
 
 	// Seek back up to the right place in the header
-	ofw->seek(ofw->saved_outfile_offset, SEEK_SET);
+	fsetpos(ofw->out, &ofw->saved_outfile_offset);
 
 	// Indicate that we terminated normally.
 	write_byte(ofw->out, 1);
@@ -134,7 +134,7 @@ static void write_mono_class(
 	write_int32(file, min_alignment);
 }
 
-static guint32 g_backtrace_frame_debug_rows[512];
+static guint32 g_backtrace_frame_debug_lines[512];
 static size_t write_backtrace_methods(
 	FILE* file,
 	GHashTable* seen_methods,
@@ -145,7 +145,7 @@ static size_t write_backtrace_methods(
 	MonoDomain* domain = mono_domain_get();
 	for (size_t i = 0; backtrace[i] != NULL; ++i, ++frame_count)
 	{
-		g_assert(i < _countof(g_backtrace_frame_debug_rows));
+		g_assert(i < _countof(g_backtrace_frame_debug_lines));
 		auto* frame = backtrace[i];
 
 		MonoMethod* method = frame->method;
@@ -169,7 +169,7 @@ static size_t write_backtrace_methods(
 			++total_unique_methods;
 		}
 
-		g_backtrace_frame_debug_rows[i] = debug_loc != NULL
+		g_backtrace_frame_debug_lines[i] = debug_loc != NULL
 			? debug_loc->row
 			: 0;
 
@@ -201,8 +201,9 @@ static void write_backtrace(
 
 		write_pointer(file, frame->method);
 		//write_uint32(file, frame->il_offset);
-		write_vuint(file, g_backtrace_frame_debug_rows[i]);
+		write_vuint(file, g_backtrace_frame_debug_lines[i]);
 	}
+	memset(g_backtrace_frame_debug_lines, 0, frame_count * sizeof(g_backtrace_frame_debug_lines[0]));
 
 	++total_unique_backtraces;
 }
@@ -302,15 +303,6 @@ uint64_t OutfileWriter::get_nanoseconds_offset() const
 	return get_nanoseconds() - this->saved_outfile_nanos_start;
 }
 
-void OutfileWriter::seek(fpos_t pos, int origin)
-{
-#if PLATFORM_WIN32
-	_fseeki64(this->out, pos, origin);
-#else
-	fseeko(this->out, pos, origin);
-#endif
-}
-
 void OutfileWriter::try_flush()
 {
 	if (this->auto_flush)
@@ -378,9 +370,9 @@ void OutfileWriter::write_object_new(const MonoClass* klass, const MonoObject* o
 	write_byte(this->out, cTagMonoObjectNew);
 	write_time(this->out, timestamp);
 	write_pointer(this->out, backtrace);
-	write_pointer(this->out, klass);
+	//write_pointer(this->out, klass);
 	write_pointer(this->out, obj);
-	write_uint32(this->out, size);
+	write_vuint(this->out, static_cast<uint32_t>(size));
 
 	total.object_news_count++;
 
@@ -393,9 +385,9 @@ void OutfileWriter::write_object_resize(const MonoClass* klass, gpointer backtra
 #if HEAP_BOSS_TRACK_INDIVIDUAL_OBJECTS
 	write_byte(this->out, cTagMonoObjectSizeChange);
 	write_pointer(this->out, backtrace);
-	write_pointer(this->out, klass);
+	//write_pointer(this->out, klass);
 	write_pointer(this->out, obj);
-	write_uint32(this->out, new_size);
+	write_vuint(this->out, static_cast<uint32_t>(new_size));
 
 	total.object_resizes_count++;
 
@@ -407,7 +399,7 @@ void OutfileWriter::write_object_gc(const MonoClass* klass, gpointer backtrace, 
 #if HEAP_BOSS_TRACK_INDIVIDUAL_OBJECTS
 	write_byte(this->out, cTagMonoObjectGc);
 	write_pointer(this->out, backtrace);
-	write_pointer(this->out, klass);
+	//write_pointer(this->out, klass);
 	write_pointer(this->out, obj);
 
 	total.object_gcs_count++;
@@ -464,6 +456,7 @@ void OutfileWriter::write_heap()
 		heap_memory_total_heap_bytes = 
 		heap_memory_total_bytes_written = 
 		heap_memory_total_roots = 
+		heap_memory_total_threads =
 		0;
 
 	write_byte(this->out, cTagHeapMemoryStart);
@@ -473,6 +466,7 @@ void OutfileWriter::write_heap()
 	write_uint32(this->out, heap_memory_total_heap_bytes);
 	write_uint32(this->out, heap_memory_total_bytes_written);
 	write_uint32(this->out, heap_memory_total_roots);
+	write_uint32(this->out, heap_memory_total_threads);
 }
 void OutfileWriter::write_heap_end()
 {
@@ -486,6 +480,7 @@ void OutfileWriter::write_heap_end()
 	write_uint32(this->out, heap_memory_total_heap_bytes);
 	write_uint32(this->out, heap_memory_total_bytes_written);
 	write_uint32(this->out, heap_memory_total_roots);
+	write_uint32(this->out, heap_memory_total_threads);
 
 	fsetpos(this->out, &old_fpos);
 
@@ -555,8 +550,31 @@ void OutfileWriter::write_heap_root_set(const void* start, const void* end)
 			size -= 1;
 
 		fwrite(start, sizeof(char), size, this->out);
-		heap_memory_total_roots++;
 	}
+
+	heap_memory_total_roots++;
+}
+void OutfileWriter::write_thread_stack(int32_t thread_id, const void* stack, size_t stack_size, const void* registers, size_t registers_size)
+{
+	if (heap_memory_total_threads == 0)
+		write_byte(this->out, cTagHeapMemoryThreads);
+
+	write_int32(this->out, thread_id);
+	write_pointer(this->out, stack);
+	write_vuint(this->out, static_cast<uint32_t>(stack_size));
+	write_vuint(this->out, static_cast<uint32_t>(registers_size));
+
+	if (stack_size > 0)
+	{
+		fwrite(stack, sizeof(char), stack_size, this->out);
+	}
+
+	if (registers_size > 0)
+	{
+		fwrite(registers, sizeof(char), registers_size, this->out);
+	}
+
+	heap_memory_total_threads++;
 }
 
 void OutfileWriter::write_boehm_allocation(gpointer address, size_t size)
@@ -567,7 +585,7 @@ void OutfileWriter::write_boehm_allocation(gpointer address, size_t size)
 	write_byte(this->out, cTagBoehmAlloc);
 	write_time(this->out, timestamp);
 	write_pointer(this->out, address);
-	write_uint32(this->out, static_cast<uint32_t>(size));
+	write_vuint(this->out, static_cast<uint32_t>(size));
 
 	total.boehm_news_count++;
 
@@ -582,7 +600,7 @@ void OutfileWriter::write_boehm_free(gpointer address, size_t size)
 	write_byte(this->out, cTagBoehmFree);
 	write_time(this->out, timestamp);
 	write_pointer(this->out, address);
-	write_uint32(this->out, static_cast<uint32_t>(size));
+	write_vuint(this->out, static_cast<uint32_t>(size));
 
 	total.boehm_frees_count++;
 
@@ -607,7 +625,7 @@ void OutfileWriter::write_class_statics_allocation(MonoDomain* domain, MonoClass
 	write_byte(this->out, cTagMonoClassStatics);
 	write_pointer(this->out, klass);
 	write_pointer(this->out, data);
-	write_uint32(this->out, static_cast<uint32_t>(data_size));
+	write_vuint(this->out, static_cast<uint32_t>(data_size));
 
 	try_flush();
 }
@@ -616,8 +634,8 @@ void OutfileWriter::write_thread_table_allocation(MonoThread** table, size_t tab
 {
 	write_byte(this->out, cTagMonoThreadTableResize);
 	write_pointer(this->out, table);
-	write_uint32(this->out, static_cast<uint32_t>(table_count));
-	write_uint32(this->out, static_cast<uint32_t>(table_size));
+	write_vuint(this->out, static_cast<uint32_t>(table_count));
+	write_vuint(this->out, static_cast<uint32_t>(table_size));
 
 	try_flush();
 }
@@ -625,7 +643,7 @@ void OutfileWriter::write_thread_statics_allocation(gpointer data, size_t data_s
 {
 	write_byte(this->out, cTagMonoThreadStatics);
 	write_pointer(this->out, data);
-	write_uint32(this->out, static_cast<uint32_t>(data_size));
+	write_vuint(this->out, static_cast<uint32_t>(data_size));
 
 	try_flush();
 }

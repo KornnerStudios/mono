@@ -114,6 +114,7 @@ void GC_heap_sections_foreach (GC_PTR user_data, GC_heap_section_proc callback, 
 	if (callback == NULL && blocks_callback == NULL)
 		return;
 
+	LOCK();
 	for (i = 0; i < GC_n_heap_sects; ++i)
 	{
 		start = GC_heap_sects[i].hs_start;
@@ -158,6 +159,7 @@ void GC_heap_sections_foreach (GC_PTR user_data, GC_heap_section_proc callback, 
 		if (callback != NULL)
 			callback(user_data, (ptr_t)-1, (ptr_t)-1);
 	}
+	UNLOCK();
 }
 // BOSSFIGHT: end
 

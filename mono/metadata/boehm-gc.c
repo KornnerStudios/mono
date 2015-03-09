@@ -280,12 +280,20 @@ static void on_gc_dump_static_roots(GC_PTR user_data, GC_PTR start, GC_PTR end)
 {
 	mono_profiler_gc_boehm_dump_static_root_set(start, end);
 }
+static void on_gc_dump_thread_stack(GC_PTR user_data, GC_word thread_id, GC_PTR stack_start, GC_PTR stack_end, GC_PTR registers_start, GC_PTR registers_end)
+{
+	mono_profiler_gc_boehm_dump_thread_stack(thread_id,
+		stack_start, stack_end,
+		registers_start, registers_end);
+}
 
 static gint64 gc_start_time;
 
 static void
 on_gc_notification (GCEventType event)
 {
+	guint32 profiler_flags;
+
 	if (!mono_perfcounters) return;
 	if (event == MONO_GC_EVENT_START) {
 		mono_perfcounters->gc_collections0++;
@@ -304,7 +312,8 @@ on_gc_notification (GCEventType event)
 	mono_profiler_gc_event ((MonoGCEvent) event, 0);
 
 	// BOSSFIGHT: dump heap after reclamation has finished
-	if (event == MONO_GC_EVENT_RECLAIM_END && mono_profiler_get_events() & MONO_PROFILER_GC_BOEHM_DUMP_EVENTS)
+	profiler_flags = mono_profiler_get_events();
+	if (event == MONO_GC_EVENT_RECLAIM_END && (profiler_flags & MONO_PROFILER_GC_BOEHM_DUMP_EVENTS) != 0)
 	{
 		mono_profiler_gc_boehm_dump_begin();
 
@@ -313,6 +322,9 @@ on_gc_notification (GCEventType event)
 
 		GC_static_roots_foreach(NULL,
 			on_gc_dump_static_roots);
+
+		GC_thread_stacks_foreach(NULL,
+			on_gc_dump_thread_stack);
 
 		mono_profiler_gc_boehm_dump_end();
 	}

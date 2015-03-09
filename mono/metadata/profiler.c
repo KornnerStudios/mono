@@ -104,6 +104,7 @@ struct _ProfilerDesc {
 	MonoProfileGCBoehmDumpHeapSectionFunc gc_boehm_dump_heap_section_cb;
 	MonoProfileGCBoehmDumpHeapSectionBlockFunc gc_boehm_dump_heap_section_block_cb;
 	MonoProfileGCBoehmDumpStaticRootFunc gc_boehm_dump_static_roots_cb;
+	MonoProfileGCBoehmDumpThreadStackFunc gc_boehm_dump_thread_stack_cb;
 
 	MonoProfileClassVTableFunc class_vtable_created_cb;
 	MonoProfileClassStaticsAllocFunc class_statics_alloc_cb;
@@ -887,7 +888,8 @@ void mono_profiler_gc_boehm_fixed_free(gpointer address, size_t size)
 }
 
 void mono_profiler_install_gc_boehm_dump(MonoProfileGCBoehmDumpFunc begin_callback, MonoProfileGCBoehmDumpFunc end_callback,
-	MonoProfileGCBoehmDumpHeapSectionFunc section_callback, MonoProfileGCBoehmDumpHeapSectionBlockFunc section_block_callback, MonoProfileGCBoehmDumpStaticRootFunc root_set_callback)
+	MonoProfileGCBoehmDumpHeapSectionFunc section_callback, MonoProfileGCBoehmDumpHeapSectionBlockFunc section_block_callback,
+	MonoProfileGCBoehmDumpStaticRootFunc root_set_callback, MonoProfileGCBoehmDumpThreadStackFunc thread_stack_callback)
 {
 	if (!prof_list)
 		return;
@@ -897,6 +899,7 @@ void mono_profiler_install_gc_boehm_dump(MonoProfileGCBoehmDumpFunc begin_callba
 	prof_list->gc_boehm_dump_heap_section_cb = section_callback;
 	prof_list->gc_boehm_dump_heap_section_block_cb = section_block_callback;
 	prof_list->gc_boehm_dump_static_roots_cb = root_set_callback;
+	prof_list->gc_boehm_dump_thread_stack_cb = thread_stack_callback;
 }
 void mono_profiler_gc_boehm_dump_begin()
 {
@@ -941,6 +944,15 @@ void mono_profiler_gc_boehm_dump_static_root_set(gpointer start, gpointer end)
 	{
 		if ((prof->events & MONO_PROFILER_GC_BOEHM_DUMP_EVENTS) && prof->gc_boehm_dump_static_roots_cb)
 			prof->gc_boehm_dump_static_roots_cb(prof->profiler, start, end);
+	}
+}
+void mono_profiler_gc_boehm_dump_thread_stack(gint32 thread_id, gpointer stack_start, gpointer stack_end, gpointer registers_start, gpointer registers_end)
+{
+	ProfilerDesc *prof;
+	for (prof = prof_list; prof; prof = prof->next)
+	{
+		if ((prof->events & MONO_PROFILER_GC_BOEHM_DUMP_EVENTS) && prof->gc_boehm_dump_thread_stack_cb)
+			prof->gc_boehm_dump_thread_stack_cb(prof->profiler, thread_id, stack_start, stack_end, registers_start, registers_end);
 	}
 }
 

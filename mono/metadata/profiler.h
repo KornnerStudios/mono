@@ -183,8 +183,10 @@ typedef void (*MonoProfileGCBoehmDumpFunc)(MonoProfiler* prof);
 typedef void (*MonoProfileGCBoehmDumpHeapSectionFunc)(MonoProfiler* prof, gpointer start, gpointer end);
 typedef void (*MonoProfileGCBoehmDumpHeapSectionBlockFunc)(MonoProfiler* prof, gpointer base_address, size_t block_size, size_t object_size, guint8 block_kind, guint8 flags);
 typedef void (*MonoProfileGCBoehmDumpStaticRootFunc)(MonoProfiler* prof, gpointer start, gpointer end);
+typedef void (*MonoProfileGCBoehmDumpThreadStackFunc)(MonoProfiler* prof, gint32 thread_id, gpointer stack_start, gpointer stack_end, gpointer registers_start, gpointer registers_end);
 void mono_profiler_install_gc_boehm_dump(MonoProfileGCBoehmDumpFunc begin_callback, MonoProfileGCBoehmDumpFunc end_callback,
-	MonoProfileGCBoehmDumpHeapSectionFunc section_callback, MonoProfileGCBoehmDumpHeapSectionBlockFunc section_block_callback, MonoProfileGCBoehmDumpStaticRootFunc root_set_callback);
+										 MonoProfileGCBoehmDumpHeapSectionFunc section_callback, MonoProfileGCBoehmDumpHeapSectionBlockFunc section_block_callback,
+										 MonoProfileGCBoehmDumpStaticRootFunc root_set_callback, MonoProfileGCBoehmDumpThreadStackFunc thread_stack_callback);
 
 typedef void (*MonoProfileClassVTableFunc)(MonoProfiler* prof, MonoDomain* domain, MonoClass* klass, MonoVTable* vtable);
 void mono_profiler_install_class_vtable_created(MonoProfileClassVTableFunc callback);

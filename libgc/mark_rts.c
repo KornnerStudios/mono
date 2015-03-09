@@ -47,10 +47,12 @@ void GC_static_roots_foreach(GC_PTR user_data, GC_static_roots_proc callback)
 	if (callback == NULL)
 		return;
 
+	LOCK();
 	for (i = 0; i < n_root_sets; i++)
 	{
 		callback(user_data, GC_static_roots[i].r_start, GC_static_roots[i].r_end);
 	}
+	UNLOCK();
 }
 // BOSSFIGHT: end
 

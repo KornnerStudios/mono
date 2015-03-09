@@ -417,6 +417,97 @@ ptr_t GC_current_stackbottom()
 	}
 # endif
 
+// BOSSFIGHT: begin
+void GC_thread_stacks_foreach(GC_PTR user_data, GC_thread_stacks_proc callback)
+{
+	// use a static buffer so we don't essentially dump the register values twice, assuming the current thread is scannable
+	static unsigned char g_registers_buffer[512];
+
+	DWORD thread_id = GetCurrentThreadId();
+	int i;
+	int dummy;
+	ptr_t sp, stack_min, stack_start, stack_end;
+	GC_thread thread;
+	LONG last_thread_index = GC_get_max_thread_index();
+	size_t registers_buffer_offset = 0;
+
+	if (callback == NULL)
+		return;
+
+	LOCK();
+	memset(g_registers_buffer, 0, sizeof g_registers_buffer);
+
+	for (i = 0; i <= last_thread_index; i++)
+	{
+		thread = thread_table + i;
+		if (thread->in_use && thread->should_scan && thread->stack_base)
+		{
+			if (thread->id == thread_id)
+			{
+				sp = (ptr_t)&dummy;
+			}
+			else if (!thread->suspended)
+			{
+				continue;
+			}
+			else
+			{
+				CONTEXT context;
+				context.ContextFlags = CONTEXT_INTEGER | CONTEXT_CONTROL;
+				if (!GetThreadContext(thread_table[i].handle, &context))
+					ABORT("GetThreadContext failed");
+
+#define _PUSH1(reg) do {																					\
+					memcpy(g_registers_buffer+registers_buffer_offset, &context.reg, sizeof(context.reg));	\
+					registers_buffer_offset += sizeof(context.reg);											\
+					GC_ASSERT(registers_buffer_offset <= sizeof(g_registers_buffer));						\
+				} while (0)
+#define _PUSH2(r1,r2)		_PUSH1(r1);		_PUSH1(r2);
+#define _PUSH4(r1,r2,r3,r4)	_PUSH2(r1,r2);	_PUSH2(r3,r4);
+
+#if defined(I386)
+				_PUSH4(Edi, Esi, Ebx, Edx); _PUSH2(Ecx, Eax); _PUSH1(Ebp);
+				sp = (ptr_t)context.Esp;
+#elif defined(X86_64)
+				_PUSH4(Rax, Rcx, Rdx, Rbx); _PUSH2(Rbp, Rsi); _PUSH1(Rdi);
+				_PUSH4(R8, R9, R10, R11); _PUSH4(R12, R13, R14, R15);
+				sp = (ptr_t)context.Rsp;
+#else
+#				error "architecture is not supported"
+#endif
+
+#undef _PUSH1
+#undef _PUSH2
+#undef _PUSH4
+			}
+
+			stack_min = GC_get_stack_min(thread->stack_base, sp);
+
+			stack_end = thread->stack_base;
+			if (sp >= stack_min && sp < thread->stack_base)
+				stack_start = sp;
+			else
+			{
+				WARN("Thread %d stack pointer 0x%p out of range, pushing everything\n",
+					 (i, sp));
+				stack_start = stack_min;
+			}
+
+			// logic stolen from mark.c: GC_push_all
+			stack_start = (ptr_t)(((word)stack_start + ALIGNMENT - 1) & ~(ALIGNMENT - 1));
+			stack_end = (ptr_t)(((word)stack_end) & ~(ALIGNMENT - 1));
+			if (stack_end == 0 || stack_start == stack_end)
+				continue;
+
+			callback(user_data, i,
+				stack_start, stack_end,
+				g_registers_buffer, g_registers_buffer + registers_buffer_offset);
+		}
+	}
+	UNLOCK();
+}
+// BOSSFIGHT: end
+
 void GC_push_all_stacks()
 {
   DWORD thread_id = GetCurrentThreadId();

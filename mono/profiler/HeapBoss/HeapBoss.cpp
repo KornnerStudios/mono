@@ -91,6 +91,9 @@ static void dispose_mono_profiler(MonoProfiler* p)
 
 static void heap_boss_profiler_runtime_initialized(MonoProfiler* p)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 	p->runtime_is_ready = true;
 	mono_mutex_unlock(&p->lock);
@@ -98,7 +101,7 @@ static void heap_boss_profiler_runtime_initialized(MonoProfiler* p)
 
 static void heap_boss_alloc_func(MonoProfiler* p, MonoObject* obj, MonoClass* klass)
 {
-	if (!p->runtime_is_ready)
+	if (g_heap_boss_profiler == NULL || !p->runtime_is_ready)
 		return;
 
 	StackFrame** backtrace = backtrace_get_current();
@@ -155,6 +158,9 @@ static void post_gc_logging_fn(gpointer key, gpointer value, gpointer user_data)
 
 static void heap_boss_gc_func(MonoProfiler* p, MonoGCEvent e, int gen)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	gint64 prev_total_live_bytes;
 	gint32 prev_total_live_objects;
 
@@ -191,16 +197,14 @@ static void heap_boss_gc_func(MonoProfiler* p, MonoGCEvent e, int gen)
 		p->outfile_writer->write_ios_memory_stats(&ios_mem_stats);
 #endif
 
-	if (p->gc_heap_dumping_enabled)
-	{
-		//gc_heap_dump(p->outfile_writer);
-	}
-
 	mono_mutex_unlock(&p->lock);
 }
 
 static void heap_boss_gc_resize_func(MonoProfiler* p, gint64 new_size)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 
 	outfile_writer_resize(p->outfile_writer,
@@ -221,12 +225,18 @@ static void heap_boss_gc_resize_func(MonoProfiler* p, gint64 new_size)
 
 static void heap_boss_gc_boehm_fixed_alloc(MonoProfiler* p, gpointer address, size_t size)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 	p->outfile_writer->write_boehm_allocation(address, size);
 	mono_mutex_unlock(&p->lock);
 }
 static void heap_boss_gc_boehm_fixed_free(MonoProfiler* p, gpointer address, size_t size)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 	p->outfile_writer->write_boehm_free(address, size);
 	mono_mutex_unlock(&p->lock);
@@ -234,6 +244,9 @@ static void heap_boss_gc_boehm_fixed_free(MonoProfiler* p, gpointer address, siz
 
 static void heap_boss_gc_boehm_dump_begin(MonoProfiler* p)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 	if (p->gc_heap_dumping_enabled)
 		p->outfile_writer->write_heap();
@@ -241,6 +254,9 @@ static void heap_boss_gc_boehm_dump_begin(MonoProfiler* p)
 }
 static void heap_boss_gc_boehm_dump_end(MonoProfiler* p)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 	if (p->gc_heap_dumping_enabled)
 		p->outfile_writer->write_heap_end();
@@ -248,39 +264,67 @@ static void heap_boss_gc_boehm_dump_end(MonoProfiler* p)
 }
 static void heap_boss_gc_boehm_dump_heap_section(MonoProfiler* p, gpointer start, gpointer end)
 {
-	const gpointer cEndSignal = reinterpret_cast<gpointer>(-1);
-	mono_mutex_lock(&p->lock);
-	if (!p->gc_heap_dumping_enabled)
+	if (g_heap_boss_profiler == NULL)
 		return;
 
-	if (start == cEndSignal && end == cEndSignal)
-		p->outfile_writer->write_heap_section_end();
-	else
+	mono_mutex_lock(&p->lock);
+	if (p->gc_heap_dumping_enabled)
 	{
-		p->outfile_writer->write_heap_section(start, end);
-	}
+		const gpointer cEndSignal = reinterpret_cast<gpointer>(-1);
 
+		if (start == cEndSignal && end == cEndSignal)
+			p->outfile_writer->write_heap_section_end();
+		else
+		{
+			p->outfile_writer->write_heap_section(start, end);
+		}
+	}
 	mono_mutex_unlock(&p->lock);
 }
 static void heap_boss_gc_boehm_dump_heap_section_block(MonoProfiler* p, 
 	gpointer base_address, size_t block_size, size_t object_size, guint8 block_kind, guint8 flags)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
+	bool is_free = flags & 0x01;
 	if (p->gc_heap_dumping_enabled)
-		p->outfile_writer->write_heap_end();
+		p->outfile_writer->write_heap_section_block(base_address, block_size, object_size, block_kind, is_free);
 	mono_mutex_unlock(&p->lock);
 }
 static void heap_boss_gc_boehm_dump_root_set(MonoProfiler* p, gpointer start, gpointer end)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 	if (p->gc_heap_dumping_enabled)
 		p->outfile_writer->write_heap_root_set(start, end);
+	mono_mutex_unlock(&p->lock);
+}
+static void heap_boss_gc_boehm_dump_thread_stack(MonoProfiler* p,
+	gint32 thread_id, gpointer stack_start, gpointer stack_end, gpointer registers_start, gpointer registers_end)
+{
+	if (g_heap_boss_profiler == NULL)
+		return;
+
+	mono_mutex_lock(&p->lock);
+	if (p->gc_heap_dumping_enabled)
+	{
+		size_t stack_size = (uintptr_t)stack_end - (uintptr_t)stack_start;
+		size_t regs_size = (uintptr_t)registers_end - (uintptr_t)registers_start;
+		p->outfile_writer->write_thread_stack(thread_id, stack_start, stack_size, registers_start, regs_size);
+	}
 	mono_mutex_unlock(&p->lock);
 }
 
 static void heap_boss_class_vtable_created(MonoProfiler* p,
 	MonoDomain* domain, MonoClass* klass, MonoVTable* vtable)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 	if (p->gc_heap_dumping_enabled)
 		p->outfile_writer->write_class_vtable_created(domain, klass, vtable);
@@ -290,6 +334,9 @@ static void heap_boss_class_vtable_created(MonoProfiler* p,
 static void heap_boss_class_statics_allocation(MonoProfiler* p,
 	MonoDomain* domain, MonoClass* klass, gpointer data, size_t data_size)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 	if (p->gc_heap_dumping_enabled)
 		p->outfile_writer->write_class_statics_allocation(domain, klass, data, data_size);
@@ -299,6 +346,9 @@ static void heap_boss_class_statics_allocation(MonoProfiler* p,
 static void heap_boss_thread_table_allocation(MonoProfiler* p,
 	MonoThread** table, size_t table_count, size_t table_size)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 	if (p->gc_heap_dumping_enabled)
 		p->outfile_writer->write_thread_table_allocation(table, table_count, table_size);
@@ -307,6 +357,9 @@ static void heap_boss_thread_table_allocation(MonoProfiler* p,
 static void heap_boss_thread_statics_allocation(MonoProfiler* p,
 	gpointer data, size_t data_size)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	mono_mutex_lock(&p->lock);
 	if (p->gc_heap_dumping_enabled)
 		p->outfile_writer->write_thread_statics_allocation(data, data_size);
@@ -315,6 +368,9 @@ static void heap_boss_thread_statics_allocation(MonoProfiler* p,
 
 static void heap_boss_shutdown(MonoProfiler* p)
 {
+	if (g_heap_boss_profiler == NULL)
+		return;
+
 	// Do a final, synthetic GC
 	heap_boss_gc_func(p, MONO_GC_EVENT_MARK_END, -1);
 
@@ -344,7 +400,9 @@ void mono_gc_base_init();
 extern "C"
 void heap_boss_startup(const char* desc)
 {
-	//mono_gc_base_init();
+#if PLATFORM_WIN32
+	MessageBoxA(NULL, "Attach debugger now", "HeapBoss", MB_OK);
+#endif
 
 	MonoProfiler* p;
 
@@ -389,7 +447,7 @@ void heap_boss_startup(const char* desc)
 	mono_profiler_install_gc_boehm(heap_boss_gc_boehm_fixed_alloc, heap_boss_gc_boehm_fixed_free);
 	mono_profiler_install_gc_boehm_dump(heap_boss_gc_boehm_dump_begin, heap_boss_gc_boehm_dump_end,
 		heap_boss_gc_boehm_dump_heap_section, heap_boss_gc_boehm_dump_heap_section_block, 
-		heap_boss_gc_boehm_dump_root_set);
+		heap_boss_gc_boehm_dump_root_set, heap_boss_gc_boehm_dump_thread_stack);
 
 	mono_profiler_install_class_vtable_created(heap_boss_class_vtable_created);
 	mono_profiler_install_class_statics_allocation(heap_boss_class_statics_allocation);
@@ -401,6 +459,9 @@ void heap_boss_startup(const char* desc)
 		MONO_PROFILE_ALLOCATIONS | MONO_PROFILE_GC | 
 		MONO_PROFILER_GC_BOEHM_EVENTS | MONO_PROFILER_GC_BOEHM_DUMP_EVENTS);
 	mono_profiler_set_events(profile_flags);
+
+	// route around Unity's bullshit https://twitter.com/KornnerStudios/status/574729839250272257
+	mono_profiler_install(NULL, NULL);
 
 	printf("*** Running with heap-boss ***\n");
 }
@@ -420,7 +481,7 @@ void heap_boss_handle_custom_event(const char* text)
 	if (g_heap_boss_profiler == NULL || text == NULL)
 		return;
 
-	printf("boss custom event: %s\n\n", text);
+	//printf("boss custom event: %s\n\n", text);
 
 	bool gc_heap_dumping_enabled = 0 == strcmp(text, "tap_to_play_shown");
 

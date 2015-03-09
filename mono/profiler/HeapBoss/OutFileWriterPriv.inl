@@ -161,7 +161,7 @@ static const char* cFileLabel = "heap-boss logfile";
 
 enum {
 	cFileSignature = 0x4EABB055,
-	cFileVersion = 1,
+	cFileVersion = 2,
 	
 	cTagNone = 0,
 	
@@ -179,6 +179,7 @@ enum {
 	cTagHeapMemorySection,
 	cTagHeapMemorySectionBlock,
 	cTagHeapMemoryRoots,
+	cTagHeapMemoryThreads,
 	cTagBoehmAlloc,
 	cTagBoehmFree,
 	cTagMonoVTable,

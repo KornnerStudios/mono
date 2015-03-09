@@ -971,6 +971,10 @@ typedef void (*GC_heap_section_proc)
 typedef void (*GC_heap_section_block_proc)
 	GC_PROTO((GC_PTR user_data, GC_PTR block, size_t block_size, size_t obj_size, unsigned char obj_kind, unsigned char flags));
 GC_API void GC_heap_sections_foreach GC_PROTO((GC_PTR user_data, GC_heap_section_proc callback, GC_heap_section_block_proc blocks_callback));
+
+typedef void (*GC_thread_stacks_proc)
+	GC_PROTO((GC_PTR user_data, GC_word thread_id, GC_PTR stack_start, GC_PTR stack_end, GC_PTR registers_start, GC_PTR registers_end));
+GC_API void GC_thread_stacks_foreach GC_PROTO((GC_PTR user_data, GC_thread_stacks_proc callback));
 // BOSSFIGHT: end
 
  /*

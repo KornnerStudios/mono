@@ -43,12 +43,11 @@ struct OutfileWriter
 	uint32_t heap_memory_total_heap_bytes;
 	uint32_t heap_memory_total_bytes_written;
 	uint32_t heap_memory_total_roots;
+	uint32_t heap_memory_total_threads;
 
 	~OutfileWriter();
 
 	uint64_t get_nanoseconds_offset() const;
-
-	void seek(fpos_t pos, int origin);
 
 	void try_flush();
 
@@ -78,6 +77,7 @@ struct OutfileWriter
 	void write_heap_section_end();
 	void write_heap_root_sets_start();
 	void write_heap_root_set(const void* start, const void* end);
+	void write_thread_stack(int32_t thread_id, const void* stack, size_t stack_size, const void* registers, size_t registers_size);
 
 	void write_boehm_allocation(gpointer address, size_t size);
 	void write_boehm_free(gpointer address, size_t size);
