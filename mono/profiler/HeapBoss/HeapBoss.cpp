@@ -32,11 +32,11 @@ struct _MonoProfiler
 
 	mono_mutex_t   lock;
 	GHashTable*    accountant_hash;
-	gint64         total_allocated_bytes;
-	gint64         total_live_bytes;
-	gint32         total_allocated_objects;
-	gint32         total_live_objects;
-	gint32         n_dirty_accountants;
+	guint64        total_allocated_bytes;
+	guint64        total_live_bytes;
+	guint32        total_allocated_objects;
+	guint32        total_live_objects;
+	guint32        n_dirty_accountants;
 	OutfileWriter* outfile_writer;
 
 	static void accountant_hash_value_destroy(gpointer data)
@@ -161,8 +161,8 @@ static void heap_boss_gc_func(MonoProfiler* p, MonoGCEvent e, int gen)
 	if (g_heap_boss_profiler == NULL)
 		return;
 
-	gint64 prev_total_live_bytes;
-	gint32 prev_total_live_objects;
+	guint64 prev_total_live_bytes;
+	guint32 prev_total_live_objects;
 
 	if (e != MONO_GC_EVENT_MARK_END)
 		return;

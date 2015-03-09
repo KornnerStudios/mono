@@ -40,6 +40,7 @@ OutfileWriter* outfile_writer_open(
 	write_string(ofw->out, cFileLabel);
 	write_time(ofw->out, timestamp);
 	write_byte(ofw->out, sizeof(gpointer));
+	write_byte(ofw->out, 0); // TODO: platform id
 
 	fgetpos(ofw->out, &ofw->saved_outfile_offset);
 	ofw->saved_outfile_timestamp = timestamp;
@@ -49,7 +50,7 @@ OutfileWriter* outfile_writer_open(
 
 	// we update these after every GC
 	write_byte(ofw->out, 0);   // is the log fully written out?
-	ofw->write_counts(0, 0);
+	ofw->write_counts(0, 0, true);
 
 	return ofw;
 }
@@ -68,7 +69,7 @@ void outfile_writer_close(
 
 	// Indicate that we terminated normally.
 	write_byte(ofw->out, 1);
-	ofw->write_counts(-1, -1);
+	ofw->write_counts(0, 0, false);
 
 	fclose(ofw->out);
 
@@ -78,7 +79,8 @@ void outfile_writer_close(
 static void outfile_writer_update_totals(
 	OutfileWriter* ofw,
 	gint64         total_allocated_bytes,
-	gint32         total_allocated_objects)
+	gint32         total_allocated_objects,
+	bool write_allocated_totals)
 {
 	fpos_t old_fpos;
 	fgetpos(ofw->out, &old_fpos);
@@ -88,7 +90,7 @@ static void outfile_writer_update_totals(
 
 	// Update our counts and totals
 	write_byte(ofw->out, 0); // we still might terminate abnormally
-	ofw->write_counts(total_allocated_bytes, total_allocated_objects);
+	ofw->write_counts(total_allocated_bytes, total_allocated_objects, write_allocated_totals);
 
 	// Seek back to the end of the outfile
 	fsetpos(ofw->out, &old_fpos);
@@ -139,7 +141,7 @@ static size_t write_backtrace_methods(
 	FILE* file,
 	GHashTable* seen_methods,
 	StackFrame** backtrace,
-	int& total_unique_methods)
+	uint32_t& total_unique_methods)
 {
 	size_t frame_count = 0;
 	MonoDomain* domain = mono_domain_get();
@@ -182,7 +184,7 @@ static void write_backtrace(
 	FILE* file,
 	const Accountant* acct,
 	size_t frame_count,
-	int& total_unique_backtraces)
+	uint32_t& total_unique_backtraces)
 {
 	auto timestamp = get_ms_since_epoch();
 
@@ -227,18 +229,18 @@ void outfile_writer_add_accountant(
 void outfile_writer_gc_begin(
 	OutfileWriter* ofw,
 	gboolean       is_final,
-	gint64         total_live_bytes,
-	gint32         total_live_objects,
-	gint32         n_accountants)
+	guint64        total_live_bytes,
+	guint32        total_live_objects,
+	guint32        n_accountants)
 {
 	auto timestamp = get_ms_since_epoch();
 
 	write_byte(ofw->out, cTagGarbageCollect);
 	write_int32(ofw->out, is_final ? -1 : ofw->total.gc_count);
 	write_time(ofw->out, timestamp);
-	write_int64(ofw->out, total_live_bytes);
-	write_int32(ofw->out, total_live_objects);
-	write_int32(ofw->out, n_accountants);
+	write_uint64(ofw->out, total_live_bytes);
+	write_uint32(ofw->out, total_live_objects);
+	write_uint32(ofw->out, n_accountants);
 
 	++ofw->total.gc_count;
 }
@@ -249,7 +251,7 @@ void outfile_writer_gc_log_stats(
 {
 	write_pointer(ofw->out, acct->backtrace); // heapbuddy used to just write out 'acct' here...going with bt instead
 	write_uint32(ofw->out, acct->n_allocated_objects);
-	write_uint32(ofw->out, acct->n_allocated_bytes); // TODO: change to uint64? this could overflow in long running apps (for things like byte[])
+	write_uint64(ofw->out, acct->n_allocated_bytes);
 	write_uint32(ofw->out, acct->allocated_total_age);
 	write_uint32(ofw->out, acct->allocated_total_weight);
 	write_uint32(ofw->out, acct->n_live_objects);
@@ -261,33 +263,33 @@ void outfile_writer_gc_log_stats(
 // total_live_bytes is the total size of all live objects after the GC is finished
 void outfile_writer_gc_end(
 	OutfileWriter* ofw,
-	gint64         total_allocated_bytes,
-	gint32         total_allocated_objects,
-	gint64         total_live_bytes,
-	gint32         total_live_objects)
+	guint64        total_allocated_bytes,
+	guint32        total_allocated_objects,
+	guint64        total_live_bytes,
+	guint32        total_live_objects)
 {
-	write_int64(ofw->out, total_live_bytes);
-	write_int32(ofw->out, total_live_objects);
-	outfile_writer_update_totals(ofw, total_allocated_bytes, total_allocated_objects);
+	write_uint64(ofw->out, total_live_bytes);
+	write_uint32(ofw->out, total_live_objects);
+	outfile_writer_update_totals(ofw, total_allocated_bytes, total_allocated_objects, true);
 
 	ofw->try_flush();
 }
 
 void outfile_writer_resize(
 	OutfileWriter* ofw,
-	gint64         new_size,
-	gint64         total_live_bytes,
-	gint32         total_live_objects)
+	guint64        new_size,
+	guint64        total_live_bytes,
+	guint32        total_live_objects)
 {
 	auto timestamp = get_ms_since_epoch();
 
 	write_byte(ofw->out, cTagResize);
 	write_time(ofw->out, timestamp);
-	write_int64(ofw->out, new_size);
-	write_int64(ofw->out, total_live_bytes);
-	write_int32(ofw->out, total_live_objects);
+	write_uint64(ofw->out, new_size);
+	write_uint64(ofw->out, total_live_bytes);
+	write_uint32(ofw->out, total_live_objects);
 	++ofw->total.resize_count;
-	outfile_writer_update_totals(ofw, -1, -1);
+	outfile_writer_update_totals(ofw, 0, 0, false);
 
 	ofw->try_flush();
 }
@@ -320,13 +322,13 @@ void OutfileWriter::write_class_if_not_already_seen(MonoClass* klass)
 	}
 }
 
-void OutfileWriter::write_counts(gint64 total_allocated_bytes, gint32 total_allocated_objects)
+void OutfileWriter::write_counts(guint64 total_allocated_bytes, guint32 total_allocated_objects, bool write_allocated_totals)
 {
-	write_int32(this->out, this->total.gc_count);
-	write_int32(this->out, this->total.type_count);
-	write_int32(this->out, this->total.method_count);
-	write_int32(this->out, this->total.backtrace_count);
-	write_int32(this->out, this->total.resize_count);
+	write_uint32(this->out, this->total.gc_count);
+	write_uint32(this->out, this->total.type_count);
+	write_uint32(this->out, this->total.method_count);
+	write_uint32(this->out, this->total.backtrace_count);
+	write_uint32(this->out, this->total.resize_count);
 
 	write_uint64(this->out, this->total.frames_count);
 	write_uint64(this->out, this->total.object_news_count);
@@ -335,18 +337,18 @@ void OutfileWriter::write_counts(gint64 total_allocated_bytes, gint32 total_allo
 	write_uint64(this->out, this->total.boehm_news_count);
 	write_uint64(this->out, this->total.boehm_frees_count);
 
-	if (total_allocated_bytes >= 0)
+	if (write_allocated_totals)
 	{
-		write_int64(this->out, total_allocated_bytes);
-		write_int32(this->out, total_allocated_objects);
+		write_uint64(this->out, total_allocated_bytes);
+		write_uint32(this->out, total_allocated_objects);
 	}
 }
 
-void OutfileWriter::write_heap_stats(int64_t heap_size, int64_t heap_used_size)
+void OutfileWriter::write_heap_stats(uint64_t heap_size, uint64_t heap_used_size)
 {
 	write_byte(this->out, cTagHeapSize);
-	write_int64(this->out, heap_size);
-	write_int64(this->out, heap_used_size);
+	write_uint64(this->out, heap_size);
+	write_uint64(this->out, heap_used_size);
 
 	// intentionally not trying to flush here
 }

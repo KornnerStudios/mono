@@ -19,9 +19,10 @@ struct Accountant
 {
 	_MonoClass* klass;
 	StackFrame** backtrace;
+	gboolean dirty;
 
 	guint32   n_allocated_objects;
-	guint32   n_allocated_bytes;
+	guint64   n_allocated_bytes;
 	guint32   allocated_total_age;
 	guint32   allocated_total_weight;
 	guint32   n_live_objects;
@@ -31,8 +32,7 @@ struct Accountant
 
 	std::list<LiveObject> live_objects;
 
-	gboolean dirty;
-
+	Accountant();
 	~Accountant();
 
 private:

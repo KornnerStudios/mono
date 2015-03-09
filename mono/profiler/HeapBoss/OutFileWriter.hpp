@@ -15,11 +15,11 @@ struct OutfileWriter
 {
 	struct total_data
 	{
-		int gc_count;
-		int type_count;
-		int method_count;
-		int backtrace_count;
-		int resize_count;
+		uint32_t gc_count;
+		uint32_t type_count;
+		uint32_t method_count;
+		uint32_t backtrace_count;
+		uint32_t resize_count;
 
 		uint64_t frames_count;
 		uint64_t object_news_count, object_resizes_count, object_gcs_count;
@@ -54,9 +54,9 @@ struct OutfileWriter
 	void write_class_if_not_already_seen(MonoClass* klass);
 
 	// written after every GC and on file close
-	void write_counts(gint64 total_allocated_bytes, gint32 total_allocated_objects);
+	void write_counts(guint64 total_allocated_bytes, guint32 total_allocated_objects, bool write_totals);
 
-	void write_heap_stats(int64_t heap_size, int64_t heap_used_size);
+	void write_heap_stats(uint64_t heap_size, uint64_t heap_used_size);
 	void write_ios_memory_stats(ios_app_memory_stats* stats);
 
 	void write_object_new(const MonoClass* klass, const MonoObject* obj, uint32_t size, gpointer backtrace);
@@ -97,19 +97,19 @@ void           outfile_writer_add_accountant(OutfileWriter* ofw, Accountant* acc
 
 void           outfile_writer_gc_begin(OutfileWriter* ofw,
 									   gboolean       is_final,
-									   gint64         total_live_bytes,
-									   gint32         total_live_objects,
-									   gint32         n_accountants);
+									   guint64        total_live_bytes,
+									   guint32        total_live_objects,
+									   guint32        n_accountants);
 
 void           outfile_writer_gc_log_stats(OutfileWriter* ofw, Accountant* acct);
 
 void           outfile_writer_gc_end(OutfileWriter* ofw,
-									 gint64         total_allocated_bytes,
-									 gint32         total_allocated_objects,
-									 gint64         total_live_bytes,
-									 gint32         total_live_objects);
+									 guint64        total_allocated_bytes,
+									 guint32        total_allocated_objects,
+									 guint64        total_live_bytes,
+									 guint32        total_live_objects);
 
 void           outfile_writer_resize(OutfileWriter* ofw,
-									 gint64         new_size,
-									 gint64         total_live_bytes,
-									 gint32         total_live_objects);
+									 guint64        new_size,
+									 guint64        total_live_bytes,
+									 guint32        total_live_objects);

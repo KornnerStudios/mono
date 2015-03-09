@@ -15,6 +15,22 @@ extern gboolean mono_object_is_alive(MonoObject* obj);
 #include <mono/profiler/HeapBoss/BackTrace.hpp>
 #include <mono/profiler/HeapBoss/OutFileWriter.hpp>
 
+Accountant::Accountant()
+	: klass(NULL)
+	, backtrace(NULL)
+	, dirty(FALSE)
+	, n_allocated_objects(0)
+	, n_allocated_bytes(0)
+	, allocated_total_age(0)
+	, allocated_total_weight(0)
+	, n_live_objects(0)
+	, n_live_bytes(0)
+	, live_total_age(0)
+	, live_total_weight(0)
+	, live_objects()
+{
+}
+
 Accountant::~Accountant()
 {
 }

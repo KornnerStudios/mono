@@ -132,9 +132,8 @@ int gettimeofday(struct timeval * tp, struct timezone * tzp)
 #endif
 static uint64_t get_ms_since_epoch()
 {
-	timeval tv;
-	
-	gettimeofday(&tv, NULL);
+	GTimeVal tv;
+	g_get_current_time(&tv);
 	
 	uint64_t millisecondsSinceEpoch =
 		(uint64_t)(tv.tv_sec) * 1000 +
