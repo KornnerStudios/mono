@@ -76,6 +76,7 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalOptions> /Qvec-report:2</AdditionalOptions>
     </ClCompile>
     <Link>
       <OutputFile>$(ProjectDir)/jay.exe</OutputFile>

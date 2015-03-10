@@ -113,6 +113,8 @@ static void write_string(FILE *out, const char *str)
 #if PLATFORM_WIN32 // http://stackoverflow.com/a/26085827/444977
 int gettimeofday(struct timeval * tp, struct timezone * tzp)
 {
+	g_assert(tp);
+
 	// Note: some broken versions only have 8 trailing zero's, the correct epoch has 9 trailing zero's
 	static const uint64_t EPOCH = ((uint64_t)116444736000000000ULL);
 
@@ -125,15 +127,16 @@ int gettimeofday(struct timeval * tp, struct timezone * tzp)
 	time = ((uint64_t)file_time.dwLowDateTime);
 	time += ((uint64_t)file_time.dwHighDateTime) << 32;
 
-	tp->tv_sec = (long)((time - EPOCH) / 10000000L);
-	tp->tv_usec = (long)(system_time.wMilliseconds * 1000);
+	tp->tv_sec = (long)((time - EPOCH) / 10000000ULL);
+	tp->tv_usec = (long)(system_time.wMilliseconds * 1000U);
+
 	return 0;
 }
 #endif
 static uint64_t get_ms_since_epoch()
 {
-	GTimeVal tv;
-	g_get_current_time(&tv);
+	timeval tv;
+	gettimeofday(&tv, NULL);
 	
 	uint64_t millisecondsSinceEpoch =
 		(uint64_t)(tv.tv_sec) * 1000 +
