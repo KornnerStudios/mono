@@ -212,6 +212,11 @@ register int k;
     GC_words_allocd += lw;
     UNLOCK();
     ENABLE_SIGNALS();
+
+	// BOSSFIGHT:
+	if (GC_on_malloc_callback && result != NULL)
+		GC_on_malloc_callback(result, lb/*WORDS_TO_BYTES(lw)*/);
+
     if (0 == result) {
         return((*GC_oom_fn)(lb));
     } else {
@@ -284,6 +289,11 @@ register struct obj_kind * kind = GC_obj_kinds + k;
     *opp = obj_link(op);
     obj_link(op) = 0;
     GC_words_allocd += lw;
+
+	// BOSSFIGHT:
+	if (GC_on_malloc_callback && op != NULL)
+		GC_on_malloc_callback(op, WORDS_TO_BYTES(lw));
+
     return((ptr_t)op);
 }
 
@@ -444,6 +454,11 @@ DCL_LOCK_STATE;
 		return;
 #	      else
 	        GC_words_allocd += my_words_allocd;
+
+			// BOSSFIGHT:
+			if (GC_on_malloc_callback && op != NULL)
+				GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
+
 	        goto out;
 #	      endif
 	    }
@@ -476,6 +491,11 @@ DCL_LOCK_STATE;
 	  }
         }
 	GC_words_allocd += my_words_allocd;
+
+	// BOSSFIGHT:
+	if (GC_on_malloc_callback && op != NULL)
+		GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
+
 	goto out;
       }
     /* Next try to allocate a new block worth of objects of this size.	*/
@@ -503,6 +523,11 @@ DCL_LOCK_STATE;
 	    (void) GC_clear_stack(0);
 	    return;
 #	  else
+
+	  // BOSSFIGHT:
+	  if (GC_on_malloc_callback && op != NULL)
+		  GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
+
 	    goto out;
 #	  endif
 	}
@@ -565,6 +590,11 @@ DCL_LOCK_STATE;
 	    /* result of the normal free list mark bit clearing.	*/
             GC_non_gc_bytes += WORDS_TO_BYTES(lw);
             FASTUNLOCK();
+
+			// BOSSFIGHT:
+			if (GC_on_malloc_callback && op != NULL)
+				GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
+
             return((GC_PTR) op);
         }
         FASTUNLOCK();
@@ -588,6 +618,11 @@ DCL_LOCK_STATE;
 	GC_non_gc_bytes += WORDS_TO_BYTES(lw);
 	UNLOCK();
 	ENABLE_SIGNALS();
+
+	// BOSSFIGHT:
+	if (GC_on_malloc_callback && op != NULL)
+		GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
+
 	return((GC_PTR) op);
     }
 }
@@ -665,6 +700,11 @@ DCL_LOCK_STATE;
 	    /* Mark bit was already set while object was on free list. */
             GC_non_gc_bytes += WORDS_TO_BYTES(lw);
             FASTUNLOCK();
+
+			// BOSSFIGHT:
+			if (GC_on_malloc_callback && op != NULL)
+				GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
+
             return((GC_PTR) op);
         }
         FASTUNLOCK();

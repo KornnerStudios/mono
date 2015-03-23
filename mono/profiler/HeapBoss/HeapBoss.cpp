@@ -21,14 +21,25 @@ extern "C"
 _MonoThread* mono_thread_current();
 }
 
+#if PLATFORM_WIN32 // mkdir includes
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
+
 #include <mono/profiler/HeapBoss/Accountant.hpp>
 #include <mono/profiler/HeapBoss/BackTrace.hpp>
 #include <mono/profiler/HeapBoss/OutFileWriter.hpp>
 
 struct _MonoProfiler
 {
+private:
+	static const bool cIgnoreDumpNextHeapCond = false;
+public:
+
 	bool runtime_is_ready;
 	bool gc_heap_dumping_enabled;
+	bool should_dump_next_heap;
 
 	mono_mutex_t   lock;
 	GHashTable*    accountant_hash;
@@ -39,6 +50,11 @@ struct _MonoProfiler
 	guint32        n_dirty_accountants;
 	OutfileWriter* outfile_writer;
 
+	bool should_dump_boehm_heap() const
+	{
+		return gc_heap_dumping_enabled && (cIgnoreDumpNextHeapCond || should_dump_next_heap);
+	}
+
 	static void accountant_hash_value_destroy(gpointer data)
 	{
 		auto acct = reinterpret_cast<Accountant*>(data);
@@ -46,6 +62,12 @@ struct _MonoProfiler
 		delete acct;
 	}
 };
+
+MonoClass* get_mono_thread_class();
+void write_missed_vtables_hack(OutfileWriter* outfile_writer);
+static gpointer g_heap_boss_gc_boehm_alloc_last_addr;
+void heap_boss_gc_boehm_alloc(GC_PTR ptr, size_t size);
+void heap_boss_gc_boehm_free(GC_PTR ptr, size_t size_hint);
 
 static MonoProfiler* g_heap_boss_profiler;
 
@@ -66,11 +88,18 @@ static MonoProfiler* create_mono_profiler(
 	p->outfile_writer = outfile_writer_open(outfilename);
 
 	g_heap_boss_profiler = p;
+
+	GC_on_malloc_callback = heap_boss_gc_boehm_alloc;
+	GC_on_free_callback = heap_boss_gc_boehm_free;
+
 	return p;
 }
 
+extern size_t backtrace_misses;
 static void dispose_mono_profiler(MonoProfiler* p)
 {
+	write_missed_vtables_hack(p->outfile_writer);
+
 	outfile_writer_close(p->outfile_writer);
 	p->outfile_writer = NULL;
 
@@ -83,6 +112,9 @@ static void dispose_mono_profiler(MonoProfiler* p)
 
 	if (g_heap_boss_profiler == p)
 		g_heap_boss_profiler = NULL;
+
+	if (backtrace_misses)
+		backtrace_misses = 0;
 
 	g_free(p);
 }
@@ -104,9 +136,19 @@ static void heap_boss_alloc_func(MonoProfiler* p, MonoObject* obj, MonoClass* kl
 	if (g_heap_boss_profiler == NULL || !p->runtime_is_ready)
 		return;
 
-	StackFrame** backtrace = backtrace_get_current();
+	//StackFrame** backtrace = backtrace_get_current(obj, klass);
+	//BackTrace* backtrace = backtrace_get_current(obj, klass);
+	BackTraceByClass* backtrace = backtrace_get_current(obj, klass);
 
 	mono_mutex_lock(&p->lock);
+#if 0
+	//if (reinterpret_cast<uintptr_t>(obj)& 0xCF0)
+	if (klass == get_mono_thread_class())
+	{
+		gpointer ptr = g_heap_boss_gc_boehm_alloc_last_addr;
+		MessageBoxA(NULL, "alloc_func", "", MB_OK);
+	}
+#endif
 
 	auto acct = reinterpret_cast<Accountant*>(g_hash_table_lookup(p->accountant_hash, backtrace));
 	if (acct == NULL)
@@ -223,6 +265,26 @@ static void heap_boss_gc_resize_func(MonoProfiler* p, gint64 new_size)
 	mono_mutex_unlock(&p->lock);
 }
 
+static void heap_boss_gc_boehm_alloc(GC_PTR ptr, size_t size)
+{
+	if (g_heap_boss_profiler == NULL)
+		return;
+
+	mono_mutex_lock(&g_heap_boss_profiler->lock);
+	g_heap_boss_gc_boehm_alloc_last_addr = ptr;
+	g_heap_boss_profiler->outfile_writer->write_boehm_allocation(ptr, size);
+	mono_mutex_unlock(&g_heap_boss_profiler->lock);
+}
+static void heap_boss_gc_boehm_free(GC_PTR ptr, size_t size_hint)
+{
+	if (g_heap_boss_profiler == NULL)
+		return;
+
+	mono_mutex_lock(&g_heap_boss_profiler->lock);
+	g_heap_boss_profiler->outfile_writer->write_boehm_free(ptr, size_hint);
+	mono_mutex_unlock(&g_heap_boss_profiler->lock);
+}
+
 static void heap_boss_gc_boehm_fixed_alloc(MonoProfiler* p, gpointer address, size_t size)
 {
 	if (g_heap_boss_profiler == NULL)
@@ -248,7 +310,7 @@ static void heap_boss_gc_boehm_dump_begin(MonoProfiler* p)
 		return;
 
 	mono_mutex_lock(&p->lock);
-	if (p->gc_heap_dumping_enabled)
+	if (p->should_dump_boehm_heap())
 		p->outfile_writer->write_heap();
 	mono_mutex_unlock(&p->lock);
 }
@@ -258,8 +320,12 @@ static void heap_boss_gc_boehm_dump_end(MonoProfiler* p)
 		return;
 
 	mono_mutex_lock(&p->lock);
-	if (p->gc_heap_dumping_enabled)
+	if (p->should_dump_boehm_heap())
+	{
 		p->outfile_writer->write_heap_end();
+
+		p->should_dump_next_heap = false;
+	}
 	mono_mutex_unlock(&p->lock);
 }
 static void heap_boss_gc_boehm_dump_heap_section(MonoProfiler* p, gpointer start, gpointer end)
@@ -268,7 +334,7 @@ static void heap_boss_gc_boehm_dump_heap_section(MonoProfiler* p, gpointer start
 		return;
 
 	mono_mutex_lock(&p->lock);
-	if (p->gc_heap_dumping_enabled)
+	if (p->should_dump_boehm_heap())
 	{
 		const gpointer cEndSignal = reinterpret_cast<gpointer>(-1);
 
@@ -289,7 +355,7 @@ static void heap_boss_gc_boehm_dump_heap_section_block(MonoProfiler* p,
 
 	mono_mutex_lock(&p->lock);
 	bool is_free = flags & 0x01;
-	if (p->gc_heap_dumping_enabled)
+	if (p->should_dump_boehm_heap())
 		p->outfile_writer->write_heap_section_block(base_address, block_size, object_size, block_kind, is_free);
 	mono_mutex_unlock(&p->lock);
 }
@@ -299,7 +365,7 @@ static void heap_boss_gc_boehm_dump_root_set(MonoProfiler* p, gpointer start, gp
 		return;
 
 	mono_mutex_lock(&p->lock);
-	if (p->gc_heap_dumping_enabled)
+	if (p->should_dump_boehm_heap())
 		p->outfile_writer->write_heap_root_set(start, end);
 	mono_mutex_unlock(&p->lock);
 }
@@ -310,7 +376,7 @@ static void heap_boss_gc_boehm_dump_thread_stack(MonoProfiler* p,
 		return;
 
 	mono_mutex_lock(&p->lock);
-	if (p->gc_heap_dumping_enabled)
+	if (p->should_dump_boehm_heap())
 	{
 		size_t stack_size = (uintptr_t)stack_end - (uintptr_t)stack_start;
 		size_t regs_size = (uintptr_t)registers_end - (uintptr_t)registers_start;
@@ -326,8 +392,7 @@ static void heap_boss_class_vtable_created(MonoProfiler* p,
 		return;
 
 	mono_mutex_lock(&p->lock);
-	if (p->gc_heap_dumping_enabled)
-		p->outfile_writer->write_class_vtable_created(domain, klass, vtable);
+	p->outfile_writer->write_class_vtable_created(domain, klass, vtable);
 	mono_mutex_unlock(&p->lock);
 }
 
@@ -338,8 +403,7 @@ static void heap_boss_class_statics_allocation(MonoProfiler* p,
 		return;
 
 	mono_mutex_lock(&p->lock);
-	if (p->gc_heap_dumping_enabled)
-		p->outfile_writer->write_class_statics_allocation(domain, klass, data, data_size);
+	p->outfile_writer->write_class_statics_allocation(domain, klass, data, data_size);
 	mono_mutex_unlock(&p->lock);
 }
 
@@ -350,8 +414,7 @@ static void heap_boss_thread_table_allocation(MonoProfiler* p,
 		return;
 
 	mono_mutex_lock(&p->lock);
-	if (p->gc_heap_dumping_enabled)
-		p->outfile_writer->write_thread_table_allocation(table, table_count, table_size);
+	p->outfile_writer->write_thread_table_allocation(table, table_count, table_size);
 	mono_mutex_unlock(&p->lock);
 }
 static void heap_boss_thread_statics_allocation(MonoProfiler* p,
@@ -361,8 +424,7 @@ static void heap_boss_thread_statics_allocation(MonoProfiler* p,
 		return;
 
 	mono_mutex_lock(&p->lock);
-	if (p->gc_heap_dumping_enabled)
-		p->outfile_writer->write_thread_statics_allocation(data, data_size);
+	p->outfile_writer->write_thread_statics_allocation(data, data_size);
 	mono_mutex_unlock(&p->lock);
 }
 
@@ -395,9 +457,6 @@ static tm* get_current_tm()
 }
 
 extern "C"
-void mono_gc_base_init();
-
-extern "C"
 void heap_boss_startup(const char* desc)
 {
 #if PLATFORM_WIN32
@@ -422,7 +481,16 @@ void heap_boss_startup(const char* desc)
 			strftime(tv_string, sizeof tv_string, "%Y-%m-%d_%H;%M;%S", tm);
 		}
 
-		strcpy(outfile, "outfile_");
+#ifdef PLATFORM_WIN32
+		const char* outfiles_dir = "outfiles\\";
+		_mkdir(outfiles_dir);
+#else
+		const char* outfiles_dir = "outfiles/";
+		mkdir(outfiles_dir, 0777);
+#endif
+
+		strcpy(outfile, outfiles_dir);
+		strcat(outfile, "outfile_");
 		strcat(outfile, tv_string);
 	}
 	else
@@ -487,7 +555,17 @@ void heap_boss_handle_custom_event(const char* text)
 
 	mono_mutex_lock(&g_heap_boss_profiler->lock);
 	if (!g_heap_boss_profiler->gc_heap_dumping_enabled)
+	{
 		g_heap_boss_profiler->gc_heap_dumping_enabled = gc_heap_dumping_enabled;
+		g_heap_boss_profiler->should_dump_next_heap = true;
+	}
+	else
+	{
+		g_heap_boss_profiler->should_dump_next_heap = 
+			true // this will force it to only dump the heap after a custom event is signaled
+			//0==strcmp(text, "")
+			;
+	}
 
 	g_heap_boss_profiler->outfile_writer->write_custom_event(text);
 	mono_mutex_unlock(&g_heap_boss_profiler->lock);
@@ -540,4 +618,108 @@ void heap_boss_handle_new_frame()
 	mono_mutex_lock(&g_heap_boss_profiler->lock);
 	g_heap_boss_profiler->outfile_writer->write_new_frame();
 	mono_mutex_unlock(&g_heap_boss_profiler->lock);
+}
+
+// stolen from class-internals.h
+typedef struct {
+	MonoImage *corlib;
+	MonoClass *object_class;
+	MonoClass *byte_class;
+	MonoClass *void_class;
+	MonoClass *boolean_class;
+	MonoClass *sbyte_class;
+	MonoClass *int16_class;
+	MonoClass *uint16_class;
+	MonoClass *int32_class;
+	MonoClass *uint32_class;
+	MonoClass *int_class;
+	MonoClass *uint_class;
+	MonoClass *int64_class;
+	MonoClass *uint64_class;
+	MonoClass *single_class;
+	MonoClass *double_class;
+	MonoClass *char_class;
+	MonoClass *string_class;
+	MonoClass *enum_class;
+	MonoClass *array_class;
+	MonoClass *delegate_class;
+	MonoClass *multicastdelegate_class;
+	MonoClass *asyncresult_class;
+	MonoClass *manualresetevent_class;
+	MonoClass *typehandle_class;
+	MonoClass *fieldhandle_class;
+	MonoClass *methodhandle_class;
+	MonoClass *systemtype_class;
+	MonoClass *monotype_class;
+	MonoClass *exception_class;
+	MonoClass *threadabortexception_class;
+	MonoClass *thread_class;
+	MonoClass *transparent_proxy_class;
+	MonoClass *real_proxy_class;
+	MonoClass *mono_method_message_class;
+	MonoClass *appdomain_class;
+	MonoClass *field_info_class;
+	MonoClass *method_info_class;
+	MonoClass *stringbuilder_class;
+	MonoClass *math_class;
+	MonoClass *stack_frame_class;
+	MonoClass *stack_trace_class;
+	MonoClass *marshal_class;
+	MonoClass *iserializeable_class;
+	MonoClass *serializationinfo_class;
+	MonoClass *streamingcontext_class;
+	MonoClass *typed_reference_class;
+	MonoClass *argumenthandle_class;
+	MonoClass *marshalbyrefobject_class;
+	MonoClass *monitor_class;
+	MonoClass *iremotingtypeinfo_class;
+	MonoClass *runtimesecurityframe_class;
+	MonoClass *executioncontext_class;
+	MonoClass *internals_visible_class;
+	MonoClass *generic_ilist_class;
+	MonoClass *generic_nullable_class;
+	MonoClass *variant_class;
+	MonoClass *com_object_class;
+	MonoClass *com_interop_proxy_class;
+	MonoClass *iunknown_class;
+	MonoClass *idispatch_class;
+	MonoClass *safehandle_class;
+	MonoClass *handleref_class;
+	MonoClass *attribute_class;
+	MonoClass *customattribute_data_class;
+	MonoClass *critical_finalizer_object;
+} MonoDefaults;
+extern "C" MonoDefaults mono_defaults;
+
+static MonoClass* get_mono_thread_class() { return mono_defaults.thread_class; }
+
+static void write_missed_vtables_hack(OutfileWriter* outfile_writer)
+{
+	MonoDomain* domain = mono_domain_get();
+	MonoClass* klass;
+	MonoVTable* vtable;
+
+	// write System.MonoType vtable
+	klass = mono_defaults.monotype_class;
+	vtable = mono_class_vtable(domain, klass);
+	if (vtable != NULL)
+		outfile_writer->write_class_vtable_created(domain, klass, vtable);
+
+	// write string vtable
+	klass = mono_defaults.string_class;
+	vtable = mono_class_vtable(domain, klass);
+	if (vtable != NULL)
+		outfile_writer->write_class_vtable_created(domain, klass, vtable);
+
+	// write object vtable
+	klass = mono_defaults.object_class;
+	vtable = mono_class_vtable(domain, klass);
+	if (vtable != NULL)
+		outfile_writer->write_class_vtable_created(domain, klass, vtable);
+
+	// write System.Threading.Thread vtable
+	klass = mono_defaults.thread_class;
+	vtable = mono_class_vtable(domain, klass);
+	if (vtable != NULL)
+		outfile_writer->write_class_vtable_created(domain, klass, vtable);
 }

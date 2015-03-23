@@ -962,6 +962,13 @@ extern void GC_thr_init(void);	/* Needed for Solaris/X86	*/
 #define UNITY_USE_REASONABLE_LOOKING_GCROOTS_CODEPATH_ON_WINDOWS 1
 
 // BOSSFIGHT: begin
+typedef void (*GC_on_malloc_proc)
+	GC_PROTO((GC_PTR ptr, size_t size));
+typedef void (*GC_on_free_proc)
+	GC_PROTO((GC_PTR ptr, size_t size_hint));
+GC_API GC_on_malloc_proc GC_on_malloc_callback;
+GC_API GC_on_free_proc GC_on_free_callback;
+
 typedef void (*GC_static_roots_proc)
 	GC_PROTO((GC_PTR user_data, GC_PTR start, GC_PTR end));
 GC_API void GC_static_roots_foreach GC_PROTO((GC_PTR user_data, GC_static_roots_proc callback));

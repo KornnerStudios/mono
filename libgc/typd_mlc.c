@@ -660,6 +660,10 @@ DCL_LOCK_STATE;
 	    obj_link(op) = 0;
             GC_words_allocd += lw;
             FASTUNLOCK();
+
+			// BOSSFIGHT:
+			if (GC_on_malloc_callback && op != NULL)
+				GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
         }
    } else {
        op = (ptr_t)GENERAL_MALLOC((word)lb, GC_explicit_kind);
@@ -704,6 +708,10 @@ DCL_LOCK_STATE;
 	    obj_link(op) = 0;
             GC_words_allocd += lw;
             FASTUNLOCK();
+
+			// BOSSFIGHT:
+			if (GC_on_malloc_callback && op != NULL)
+				GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
         }
    } else {
        op = (ptr_t)GENERAL_MALLOC_IOP(lb, GC_explicit_kind);
@@ -769,6 +777,10 @@ DCL_LOCK_STATE;
 	    obj_link(op) = 0;
             GC_words_allocd += lw;
             FASTUNLOCK();
+
+			// BOSSFIGHT:
+			if (GC_on_malloc_callback && op != NULL)
+				GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
         }
    } else {
        op = (ptr_t)GENERAL_MALLOC((word)lb, GC_array_kind);

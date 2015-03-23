@@ -17,6 +17,10 @@
 #include <stdio.h>
 #include "private/gc_priv.h"
 
+// BOSSFIGHT:
+GC_on_malloc_proc GC_on_malloc_callback;
+GC_on_free_proc GC_on_free_callback;
+
 extern ptr_t GC_clear_stack();	/* in misc.c, behaves like identity */
 void GC_extend_size_map();	/* in misc.c. */
 
@@ -154,6 +158,10 @@ register ptr_t *opp;
 	op = (ptr_t)GC_alloc_large_and_clear(lw, k, 0);
     }
     GC_words_allocd += lw;
+
+	// BOSSFIGHT:
+	if (GC_on_malloc_callback && op != NULL)
+		GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
     
 out:
     return op;
@@ -174,6 +182,11 @@ register int k;
     lw = ROUNDED_UP_WORDS(lb);
     op = (ptr_t)GC_alloc_large_and_clear(lw, k, IGNORE_OFF_PAGE);
     GC_words_allocd += lw;
+
+	// BOSSFIGHT:
+	if (GC_on_malloc_callback && op != NULL)
+		GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
+
     return op;
 }
 
@@ -217,6 +230,11 @@ register int k;
 	  }
 	}
 	GC_words_allocd += lw;
+
+	// BOSSFIGHT:
+	if (GC_on_malloc_callback && result != NULL)
+		GC_on_malloc_callback(result, lb/*WORDS_TO_BYTES(lw)*/);
+
 	UNLOCK();
 	ENABLE_SIGNALS();
     	if (init && !GC_debugging_started && 0 != result) {
@@ -264,6 +282,11 @@ DCL_LOCK_STATE;
         /* See above comment on signals.	*/
         *opp = obj_link(op);
         GC_words_allocd += lw;
+
+		// BOSSFIGHT:
+		if (GC_on_malloc_callback && op != NULL)
+			GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
+
         FASTUNLOCK();
         return((GC_PTR) op);
    } else {
@@ -305,6 +328,11 @@ DCL_LOCK_STATE;
         *opp = obj_link(op);
         obj_link(op) = 0;
         GC_words_allocd += lw;
+
+		// BOSSFIGHT:
+		if (GC_on_malloc_callback && op != NULL)
+			GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
+
         FASTUNLOCK();
         return((GC_PTR) op);
    } else {

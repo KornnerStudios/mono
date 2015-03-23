@@ -35,7 +35,7 @@ Accountant::~Accountant()
 {
 }
 
-Accountant* accountant_new(MonoClass* klass, StackFrame** backtrace)
+Accountant* accountant_new(MonoClass* klass, BackTraceByClass* backtrace)
 {
 	Accountant* acct = new Accountant();
 	acct->klass = klass;

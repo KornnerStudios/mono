@@ -165,6 +165,10 @@ DCL_LOCK_STATE;
         } else {
             *opp = obj_link(op);
             GC_words_allocd += lw;
+
+			// BOSSFIGHT:
+			if (GC_on_malloc_callback && op != NULL)
+				GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
         }
 	*(void **)op = ptr_to_struct_containing_descr;
 	GC_ASSERT(((void **)op)[1] == 0);
@@ -236,6 +240,9 @@ DCL_LOCK_STATE;
     } else {
         *opp = obj_link(op);
         GC_words_allocd += lw;
+
+		if (GC_on_malloc_callback && op != NULL)
+			GC_on_malloc_callback(op, WORDS_TO_BYTES(lw));
     }
     *(void **)op = ptr_to_struct_containing_descr;
     UNLOCK();
@@ -299,6 +306,9 @@ DCL_LOCK_STATE;
         } else {
             *opp = obj_link(op);
             GC_words_allocd += lw;
+
+			if (GC_on_malloc_callback && op != NULL)
+				GC_on_malloc_callback(op, lb/*WORDS_TO_BYTES(lw)*/);
         }
 	*(void **)op = ptr_to_struct_containing_descr;
 	UNLOCK();

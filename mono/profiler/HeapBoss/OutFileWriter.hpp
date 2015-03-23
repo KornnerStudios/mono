@@ -48,6 +48,7 @@ struct OutfileWriter
 	~OutfileWriter();
 
 	uint64_t get_nanoseconds_offset() const;
+	uint64_t get_timestamp_offset() const;
 
 	void try_flush();
 

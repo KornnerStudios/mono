@@ -58,11 +58,11 @@ OutfileWriter* outfile_writer_open(
 void outfile_writer_close(
 	OutfileWriter* ofw)
 {
-	auto timestamp = get_ms_since_epoch();
+	auto timestamp = ofw->get_timestamp_offset();
 
 	// Write out the end-of-stream tag.
 	write_byte(ofw->out, cTagEos);
-	write_time(ofw->out, timestamp);
+	write_time_offset(ofw->out, timestamp);
 
 	// Seek back up to the right place in the header
 	fsetpos(ofw->out, &ofw->saved_outfile_offset);
@@ -132,26 +132,34 @@ static void write_mono_class(
 	g_free(name);
 
 	write_byte(file, flags);
-	write_int32(file, size_of);
-	write_int32(file, min_alignment);
+	write_vuint(file, static_cast<guint32>(size_of));
+	write_vuint(file, static_cast<guint32>(min_alignment));
 }
 
 static guint32 g_backtrace_frame_debug_lines[512];
 static size_t write_backtrace_methods(
 	FILE* file,
 	GHashTable* seen_methods,
-	StackFrame** backtrace,
+	const BackTrace* backtrace,
 	uint32_t& total_unique_methods)
 {
 	size_t frame_count = 0;
 	MonoDomain* domain = mono_domain_get();
-	for (size_t i = 0; backtrace[i] != NULL; ++i, ++frame_count)
+	size_t i = 0, null_count = 0;
+	for (auto iter = backtrace->frames.begin(), end = backtrace->frames.end();
+		iter != end;
+		++iter, i++, frame_count++)
 	{
 		g_assert(i < _countof(g_backtrace_frame_debug_lines));
-		auto* frame = backtrace[i];
+		auto& frame = *iter;
+		if (frame.method == NULL)
+		{
+			null_count++;
+			continue;
+		}
 
-		MonoMethod* method = frame->method;
-		MonoDebugSourceLocation* debug_loc = mono_debug_lookup_source_location(method, frame->native_offset, domain);
+		MonoMethod* method = frame.method;
+		MonoDebugSourceLocation* debug_loc = mono_debug_lookup_source_location(method, frame.native_offset, domain);
 
 		if (g_hash_table_lookup(seen_methods, method) == NULL)
 		{
@@ -178,33 +186,37 @@ static size_t write_backtrace_methods(
 		mono_debug_free_source_location(debug_loc);
 	}
 
+	//g_assert(null_count <= 1);
 	return frame_count;
 }
 static void write_backtrace(
-	FILE* file,
+	OutfileWriter* ofw,
 	const Accountant* acct,
 	size_t frame_count,
 	uint32_t& total_unique_backtraces)
 {
-	auto timestamp = get_ms_since_epoch();
+	FILE* file = ofw->out;
+	auto timestamp = ofw->get_timestamp_offset();
 
-	write_byte(file, cTagContext);
-	write_pointer(file, acct->backtrace); // heapbuddy used to just write out 'acct' here...going with bt instead
-	write_pointer(file, acct->klass);
-	write_time(file, timestamp);
+	write_byte(file, cTagBackTrace);
+	write_pointer(file, acct->backtrace->owner); // heapbuddy used to just write out 'acct' here...going with bt instead
+	//write_pointer(file, acct->klass);
+	write_time_offset(file, timestamp);
 
 	assert(frame_count <= INT16_MAX);
 	write_int16(file, frame_count);
 
 	MonoDomain* domain = mono_domain_get();
-	for (size_t i = 0; acct->backtrace[i] != NULL; ++i)
+	size_t i = 0;
+	for (auto iter = acct->backtrace->owner->frames.begin(), end = acct->backtrace->owner->frames.end();
+		iter != end;
+		++iter, i++)
 	{
-		auto* frame = acct->backtrace[i];
-
-		write_pointer(file, frame->method);
-		//write_uint32(file, frame->il_offset);
+		auto& frame = *iter;
+		write_pointer(file, frame.method);
 		write_vuint(file, g_backtrace_frame_debug_lines[i]);
 	}
+
 	memset(g_backtrace_frame_debug_lines, 0, frame_count * sizeof(g_backtrace_frame_debug_lines[0]));
 
 	++total_unique_backtraces;
@@ -217,10 +229,21 @@ void outfile_writer_add_accountant(
 	ofw->write_class_if_not_already_seen(acct->klass);
 
 	// Next, walk across the backtrace and add any previously-unseen methods.
-	size_t frame_count = write_backtrace_methods(ofw->out, ofw->seen_items, acct->backtrace, ofw->total.method_count);
+	size_t frame_count = write_backtrace_methods(ofw->out, ofw->seen_items, acct->backtrace->owner, ofw->total.method_count);
 
 	// Now we can spew out the accountant's context
-	write_backtrace(ofw->out, acct, frame_count, ofw->total.backtrace_count);
+	if (g_hash_table_lookup(ofw->seen_items, acct->backtrace->owner) == NULL)
+	{
+		// just fucking C cast the const away
+		gpointer bt = (gpointer)acct->backtrace->owner;
+		g_hash_table_insert(ofw->seen_items, bt, bt);
+
+		write_backtrace(ofw, acct, frame_count, ofw->total.backtrace_count);
+	}
+
+	write_byte(ofw->out, cTagBackTraceTypeLink);
+	write_pointer(ofw->out, acct->backtrace->owner); // heapbuddy used to just write out 'acct' here...going with bt instead
+	write_pointer(ofw->out, acct->klass);
 
 	ofw->try_flush();
 }
@@ -233,13 +256,13 @@ void outfile_writer_gc_begin(
 	guint32        total_live_objects,
 	guint32        n_accountants)
 {
-	auto timestamp = get_ms_since_epoch();
+	auto timestamp = ofw->get_timestamp_offset();
 
 	write_byte(ofw->out, cTagGarbageCollect);
 	write_int32(ofw->out, is_final ? -1 : ofw->total.gc_count);
-	write_time(ofw->out, timestamp);
-	write_uint64(ofw->out, total_live_bytes);
-	write_uint32(ofw->out, total_live_objects);
+	write_time_offset(ofw->out, timestamp);
+	write_vuint(ofw->out, total_live_bytes);
+	write_vuint(ofw->out, total_live_objects);
 	write_uint32(ofw->out, n_accountants);
 
 	++ofw->total.gc_count;
@@ -249,15 +272,16 @@ void outfile_writer_gc_log_stats(
 	OutfileWriter* ofw,
 	Accountant* acct)
 {
-	write_pointer(ofw->out, acct->backtrace); // heapbuddy used to just write out 'acct' here...going with bt instead
-	write_uint32(ofw->out, acct->n_allocated_objects);
-	write_uint64(ofw->out, acct->n_allocated_bytes);
-	write_uint32(ofw->out, acct->allocated_total_age);
-	write_uint32(ofw->out, acct->allocated_total_weight);
-	write_uint32(ofw->out, acct->n_live_objects);
-	write_uint32(ofw->out, acct->n_live_bytes);
-	write_uint32(ofw->out, acct->live_total_age);
-	write_uint32(ofw->out, acct->live_total_weight);
+	write_pointer(ofw->out, acct->backtrace->owner); // heapbuddy used to just write out 'acct' here...going with bt instead
+	write_pointer(ofw->out, acct->klass);
+	write_vuint(ofw->out, acct->n_allocated_objects);
+	write_vuint(ofw->out, acct->n_allocated_bytes);
+	write_vuint(ofw->out, acct->allocated_total_age);
+	write_vuint(ofw->out, acct->allocated_total_weight);
+	write_vuint(ofw->out, acct->n_live_objects);
+	write_vuint(ofw->out, acct->n_live_bytes);
+	write_vuint(ofw->out, acct->live_total_age);
+	write_vuint(ofw->out, acct->live_total_weight);
 }
 
 // total_live_bytes is the total size of all live objects after the GC is finished
@@ -268,8 +292,8 @@ void outfile_writer_gc_end(
 	guint64        total_live_bytes,
 	guint32        total_live_objects)
 {
-	write_uint64(ofw->out, total_live_bytes);
-	write_uint32(ofw->out, total_live_objects);
+	write_vuint(ofw->out, total_live_bytes);
+	write_vuint(ofw->out, total_live_objects);
 	outfile_writer_update_totals(ofw, total_allocated_bytes, total_allocated_objects, true);
 
 	ofw->try_flush();
@@ -281,10 +305,10 @@ void outfile_writer_resize(
 	guint64        total_live_bytes,
 	guint32        total_live_objects)
 {
-	auto timestamp = get_ms_since_epoch();
+	auto timestamp = ofw->get_timestamp_offset();
 
 	write_byte(ofw->out, cTagResize);
-	write_time(ofw->out, timestamp);
+	write_time_offset(ofw->out, timestamp);
 	write_uint64(ofw->out, new_size);
 	write_uint64(ofw->out, total_live_bytes);
 	write_uint32(ofw->out, total_live_objects);
@@ -303,6 +327,13 @@ OutfileWriter::~OutfileWriter()
 uint64_t OutfileWriter::get_nanoseconds_offset() const
 {
 	return get_nanoseconds() - this->saved_outfile_nanos_start;
+}
+
+uint64_t OutfileWriter::get_timestamp_offset() const
+{
+	auto timestamp = get_ms_since_epoch();
+
+	return timestamp - this->saved_outfile_timestamp;
 }
 
 void OutfileWriter::try_flush()
@@ -367,12 +398,15 @@ void OutfileWriter::write_object_new(const MonoClass* klass, const MonoObject* o
 {
 #if HEAP_BOSS_TRACK_INDIVIDUAL_OBJECTS
 
-	auto timestamp = get_ms_since_epoch();
+	auto timestamp = get_timestamp_offset();
+	auto klass_bt = reinterpret_cast<BackTraceByClass*>(backtrace);
+	g_assert(klass_bt->klass == klass);
 
 	write_byte(this->out, cTagMonoObjectNew);
-	write_time(this->out, timestamp);
-	write_pointer(this->out, backtrace);
-	//write_pointer(this->out, klass);
+	write_time_offset(this->out, timestamp);
+	//write_pointer(this->out, backtrace);
+	write_pointer(this->out, klass_bt->owner);
+	write_pointer(this->out, klass);
 	write_pointer(this->out, obj);
 	write_vuint(this->out, static_cast<uint32_t>(size));
 
@@ -385,9 +419,13 @@ void OutfileWriter::write_object_new(const MonoClass* klass, const MonoObject* o
 void OutfileWriter::write_object_resize(const MonoClass* klass, gpointer backtrace, const MonoObject* obj, uint32_t new_size)
 {
 #if HEAP_BOSS_TRACK_INDIVIDUAL_OBJECTS
+	auto klass_bt = reinterpret_cast<BackTraceByClass*>(backtrace);
+	g_assert(klass_bt->klass == klass);
+
 	write_byte(this->out, cTagMonoObjectSizeChange);
-	write_pointer(this->out, backtrace);
-	//write_pointer(this->out, klass);
+	//write_pointer(this->out, backtrace);
+	write_pointer(this->out, klass_bt->owner);
+	write_pointer(this->out, klass);
 	write_pointer(this->out, obj);
 	write_vuint(this->out, static_cast<uint32_t>(new_size));
 
@@ -399,9 +437,13 @@ void OutfileWriter::write_object_resize(const MonoClass* klass, gpointer backtra
 void OutfileWriter::write_object_gc(const MonoClass* klass, gpointer backtrace, const MonoObject* obj)
 {
 #if HEAP_BOSS_TRACK_INDIVIDUAL_OBJECTS
+	auto klass_bt = reinterpret_cast<BackTraceByClass*>(backtrace);
+	g_assert(klass_bt->klass == klass);
+
 	write_byte(this->out, cTagMonoObjectGc);
-	write_pointer(this->out, backtrace);
-	//write_pointer(this->out, klass);
+	//write_pointer(this->out, backtrace);
+	write_pointer(this->out, klass_bt->owner);
+	write_pointer(this->out, klass);
 	write_pointer(this->out, obj);
 
 	total.object_gcs_count++;
@@ -412,10 +454,10 @@ void OutfileWriter::write_object_gc(const MonoClass* klass, gpointer backtrace, 
 
 void OutfileWriter::write_custom_event(const char* event_string)
 {
-	auto timestamp = get_ms_since_epoch();
+	auto timestamp = get_timestamp_offset();
 
 	write_byte(this->out, cTagCustomEvent);
-	write_time(this->out, timestamp);
+	write_time_offset(this->out, timestamp);
 	write_string(this->out, event_string);
 
 	this->try_flush();
@@ -423,30 +465,30 @@ void OutfileWriter::write_custom_event(const char* event_string)
 
 void OutfileWriter::write_app_resign_active()
 {
-	auto timestamp = get_ms_since_epoch();
+	auto timestamp = get_timestamp_offset();
 
 	write_byte(this->out, cTagAppResignActive);
-	write_time(this->out, timestamp);
+	write_time_offset(this->out, timestamp);
 
 	this->try_flush();
 }
 
 void OutfileWriter::write_app_become_active()
 {
-	auto timestamp = get_ms_since_epoch();
+	auto timestamp = get_timestamp_offset();
 
 	write_byte(this->out, cTagAppBecomeActive);
-	write_time(this->out, timestamp);
+	write_time_offset(this->out, timestamp);
 
 	this->try_flush();
 }
 
 void OutfileWriter::write_new_frame()
 {
-	auto timestamp = get_ms_since_epoch();
+	auto timestamp = get_timestamp_offset();
 
 	write_byte(this->out, cTagNewFrame);
-	write_time(this->out, timestamp);
+	write_time_offset(this->out, timestamp);
 
 	total.frames_count++;
 	this->try_flush();
@@ -517,8 +559,8 @@ void OutfileWriter::write_heap_section_block(const void* start, size_t block_siz
 
 	write_byte(this->out, cTagHeapMemorySectionBlock);
 	write_pointer(this->out, start);
-	write_uint32(this->out, size);
-	write_uint32(this->out, static_cast<uint32_t>(obj_size));
+	write_vuint(this->out, size);
+	write_vuint(this->out, static_cast<uint32_t>(obj_size));
 	write_byte(this->out, block_kind);
 	write_byte(this->out, is_free);
 
@@ -582,10 +624,10 @@ void OutfileWriter::write_thread_stack(int32_t thread_id, const void* stack, siz
 void OutfileWriter::write_boehm_allocation(gpointer address, size_t size)
 {
 #if HEAP_BOSS_TRACK_INDIVIDUAL_OBJECTS
-	auto timestamp = get_ms_since_epoch();
+	auto timestamp = get_timestamp_offset();
 
 	write_byte(this->out, cTagBoehmAlloc);
-	write_time(this->out, timestamp);
+	write_time_offset(this->out, timestamp);
 	write_pointer(this->out, address);
 	write_vuint(this->out, static_cast<uint32_t>(size));
 
@@ -597,10 +639,10 @@ void OutfileWriter::write_boehm_allocation(gpointer address, size_t size)
 void OutfileWriter::write_boehm_free(gpointer address, size_t size)
 {
 #if HEAP_BOSS_TRACK_INDIVIDUAL_OBJECTS
-	auto timestamp = get_ms_since_epoch();
+	auto timestamp = get_timestamp_offset();
 
 	write_byte(this->out, cTagBoehmFree);
-	write_time(this->out, timestamp);
+	write_time_offset(this->out, timestamp);
 	write_pointer(this->out, address);
 	write_vuint(this->out, static_cast<uint32_t>(size));
 
@@ -613,8 +655,10 @@ void OutfileWriter::write_boehm_free(gpointer address, size_t size)
 void OutfileWriter::write_class_vtable_created(MonoDomain* domain, MonoClass* klass, MonoVTable* vtable)
 {
 	write_class_if_not_already_seen(klass);
+	auto timestamp = get_timestamp_offset();
 
 	write_byte(this->out, cTagMonoVTable);
+	write_time_offset(this->out, timestamp);
 	write_pointer(this->out, vtable);
 	write_pointer(this->out, klass);
 
@@ -623,8 +667,10 @@ void OutfileWriter::write_class_vtable_created(MonoDomain* domain, MonoClass* kl
 void OutfileWriter::write_class_statics_allocation(MonoDomain* domain, MonoClass* klass, gpointer data, size_t data_size)
 {
 	write_class_if_not_already_seen(klass);
+	auto timestamp = get_timestamp_offset();
 
 	write_byte(this->out, cTagMonoClassStatics);
+	write_time_offset(this->out, timestamp);
 	write_pointer(this->out, klass);
 	write_pointer(this->out, data);
 	write_vuint(this->out, static_cast<uint32_t>(data_size));
@@ -634,7 +680,10 @@ void OutfileWriter::write_class_statics_allocation(MonoDomain* domain, MonoClass
 
 void OutfileWriter::write_thread_table_allocation(MonoThread** table, size_t table_count, size_t table_size)
 {
+	auto timestamp = get_timestamp_offset();
+
 	write_byte(this->out, cTagMonoThreadTableResize);
+	write_time_offset(this->out, timestamp);
 	write_pointer(this->out, table);
 	write_vuint(this->out, static_cast<uint32_t>(table_count));
 	write_vuint(this->out, static_cast<uint32_t>(table_size));
@@ -643,7 +692,10 @@ void OutfileWriter::write_thread_table_allocation(MonoThread** table, size_t tab
 }
 void OutfileWriter::write_thread_statics_allocation(gpointer data, size_t data_size)
 {
+	auto timestamp = get_timestamp_offset();
+
 	write_byte(this->out, cTagMonoThreadStatics);
+	write_time_offset(this->out, timestamp);
 	write_pointer(this->out, data);
 	write_vuint(this->out, static_cast<uint32_t>(data_size));
 

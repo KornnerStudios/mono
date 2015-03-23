@@ -102,6 +102,11 @@ static void write_time(FILE *out, uint64_t x)
 	//write_uint64(out, x);
 	write_vuint(out, x);
 }
+static void write_time_offset(FILE *out, uint64_t x)
+{
+	//write_uint64(out, x);
+	write_vuint(out, x);
+}
 
 static void write_string(FILE *out, const char *str)
 {
@@ -163,13 +168,13 @@ static const char* cFileLabel = "heap-boss logfile";
 
 enum {
 	cFileSignature = 0x4EABB055,
-	cFileVersion = 2,
+	cFileVersion = 3,
 	
 	cTagNone = 0,
 	
 	cTagType,
 	cTagMethod,
-	cTagContext,
+	cTagBackTrace,
 	cTagGarbageCollect,
 	cTagResize,
 	cTagMonoObjectNew,
@@ -188,6 +193,7 @@ enum {
 	cTagMonoClassStatics,
 	cTagMonoThreadTableResize,
 	cTagMonoThreadStatics,
+	cTagBackTraceTypeLink,
 	
 	cTagEos = UCHAR_MAX,
 	

@@ -6,6 +6,8 @@ struct StackFrame;
 #include <list>
 
 struct OutfileWriter;
+struct BackTrace;
+struct BackTraceByClass;
 
 struct LiveObject
 {
@@ -18,7 +20,7 @@ struct LiveObject
 struct Accountant
 {
 	_MonoClass* klass;
-	StackFrame** backtrace;
+	BackTraceByClass* backtrace;
 	gboolean dirty;
 
 	guint32   n_allocated_objects;
@@ -42,4 +44,4 @@ public:
 	void post_gc_processing(OutfileWriter* ofw);
 };
 
-Accountant* accountant_new(_MonoClass* klass, StackFrame** backtrace);
+Accountant* accountant_new(_MonoClass* klass, BackTraceByClass* backtrace);

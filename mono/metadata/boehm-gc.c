@@ -471,7 +471,9 @@ mono_gc_alloc_fixed (size_t size, void *descr)
 	else
 		ptr = GC_MALLOC (size);
 
+#if 0
 	mono_profiler_gc_boehm_fixed_allocation(ptr, size);
+#endif
 	return ptr;
 }
 
@@ -479,10 +481,12 @@ void
 mono_gc_free_fixed (void* addr)
 {
 	// BOSSFIGHT: free catch-all.
+#if 0
 	size_t size = (mono_profiler_get_events() & MONO_PROFILER_GC_BOEHM_EVENTS) != 0
 		? 0
 		: GC_size(addr);
 	mono_profiler_gc_boehm_fixed_free(addr, size);
+#endif
 }
 
 int
