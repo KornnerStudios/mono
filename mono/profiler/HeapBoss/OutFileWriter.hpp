@@ -80,7 +80,8 @@ struct OutfileWriter
 	void write_heap_root_set(const void* start, const void* end);
 	void write_thread_stack(int32_t thread_id, const void* stack, size_t stack_size, const void* registers, size_t registers_size);
 
-	void write_boehm_allocation(gpointer address, size_t size);
+	void write_boehm_allocation(gpointer address, size_t size, uint32_t stacktrace_hash = 0);
+	void write_boehm_allocation_stacktrace(uint32_t stacktrace_hash, const char* stacktrace_buffer);
 	void write_boehm_free(gpointer address, size_t size);
 
 	void write_class_vtable_created(MonoDomain* domain, MonoClass* klass, MonoVTable* vtable);

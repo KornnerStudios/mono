@@ -574,6 +574,7 @@
     <ClInclude Include="..\mono\profiler\HeapBoss\HeapBoss.h" />
     <ClInclude Include="..\mono\profiler\HeapBoss\OutFileWriter.hpp" />
     <ClInclude Include="..\mono\profiler\HeapBoss\OutFileWriterPriv.inl" />
+    <ClInclude Include="..\mono\profiler\HeapBoss\Stacktrace.hpp" />
     <ClInclude Include="..\mono\utils\dlmalloc.h" />
     <ClInclude Include="..\mono\utils\mono-codeman.h" />
     <ClInclude Include="..\mono\utils\mono-compiler.h" />
@@ -706,6 +707,16 @@
       <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CompileAsCpp</CompileAs>
       <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">CompileAsCpp</CompileAs>
       <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug_eglib|Win32'">CompileAsCpp</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\mono\profiler\HeapBoss\Stacktrace.cpp">
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Default</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release_eglib|Win32'">Default</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release_eglib_xarm|Win32'">Default</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug_eglib|Win32'">Default</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release_eglib|x64'">Default</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release_eglib_xarm|x64'">Default</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug_eglib|x64'">Default</CompileAs>
     </ClCompile>
     <ClCompile Include="..\mono\utils\dlmalloc.c" />
     <ClCompile Include="..\mono\utils\mono-codeman.c">

@@ -39,4 +39,8 @@ unity_mono_method_is_inflated (MonoMethod* method);
 gboolean
 unity_mono_method_is_generic (MonoMethod* method);
 
+// BOSSFIGHT:
+extern void (__cdecl* gGetStacktraceForBossFight)(char *trace, int maxSize, int maxFrames);
+void bossfight_mono_set_backtrace_callback(void* callback);
+
 #endif

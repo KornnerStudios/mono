@@ -621,7 +621,7 @@ void OutfileWriter::write_thread_stack(int32_t thread_id, const void* stack, siz
 	heap_memory_total_threads++;
 }
 
-void OutfileWriter::write_boehm_allocation(gpointer address, size_t size)
+void OutfileWriter::write_boehm_allocation(gpointer address, size_t size, uint32_t stacktrace_hash)
 {
 #if HEAP_BOSS_TRACK_INDIVIDUAL_OBJECTS
 	auto timestamp = get_timestamp_offset();
@@ -630,10 +630,19 @@ void OutfileWriter::write_boehm_allocation(gpointer address, size_t size)
 	write_time_offset(this->out, timestamp);
 	write_pointer(this->out, address);
 	write_vuint(this->out, static_cast<uint32_t>(size));
+	write_vuint(this->out, stacktrace_hash);
 
 	total.boehm_news_count++;
 
 	// intentionally not trying to flush here
+#endif
+}
+void OutfileWriter::write_boehm_allocation_stacktrace(uint32_t stacktrace_hash, const char* stacktrace_buffer)
+{
+#if HEAP_BOSS_TRACK_INDIVIDUAL_OBJECTS
+	write_byte(this->out, cTagBoehmAllocStacktrace);
+	write_vuint(this->out, stacktrace_hash);
+	write_string(this->out, stacktrace_buffer);
 #endif
 }
 void OutfileWriter::write_boehm_free(gpointer address, size_t size)

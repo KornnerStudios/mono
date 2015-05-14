@@ -1,5 +1,6 @@
 
 #include <mono/profiler/HeapBoss/HeapBoss.h>
+#include <mono/profiler/HeapBoss/Stacktrace.hpp>
 
 #ifdef PLATFORM_WIN32 // because fucking mono-mutex.h doesn't include this shit
 #include <windows.h>
@@ -39,10 +40,12 @@ public:
 
 	bool runtime_is_ready;
 	bool gc_heap_dumping_enabled;
+	bool gc_stacktrace_dumping_enabled;
 	bool should_dump_next_heap;
 
 	mono_mutex_t   lock;
 	GHashTable*    accountant_hash;
+	GHashTable*    stacktrace_hash;
 	guint64        total_allocated_bytes;
 	guint64        total_live_bytes;
 	guint32        total_allocated_objects;
@@ -61,6 +64,13 @@ public:
 
 		delete acct;
 	}
+
+	static void stacktrace_hash_value_destroy(gpointer data)
+	{
+		auto str = reinterpret_cast<char*>(data);
+
+		free(str);
+	}
 };
 
 MonoClass* get_mono_thread_class();
@@ -77,13 +87,18 @@ static MonoProfiler* create_mono_profiler(
 	if (g_heap_boss_profiler != NULL)
 		return g_heap_boss_profiler;
 
+	bossfight_mono_set_backtrace_callback(GetStacktrace);
+
 	MonoProfiler* p = g_new0(MonoProfiler, 1);
 
 	mono_mutex_init(&p->lock, NULL);
 
 	backtrace_cache_initialize();
 
+	p->gc_stacktrace_dumping_enabled = true;
+
 	p->accountant_hash = g_hash_table_new_full(NULL, NULL, NULL, MonoProfiler::accountant_hash_value_destroy);
+	p->stacktrace_hash = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, MonoProfiler::stacktrace_hash_value_destroy);
 	p->total_live_bytes = 0;
 	p->outfile_writer = outfile_writer_open(outfilename);
 
@@ -105,6 +120,9 @@ static void dispose_mono_profiler(MonoProfiler* p)
 
 	g_hash_table_destroy(p->accountant_hash);
 	p->accountant_hash = NULL;
+
+	g_hash_table_destroy(p->stacktrace_hash);
+	p->stacktrace_hash = NULL;
 
 	backtrace_cache_dispose();
 
@@ -272,7 +290,24 @@ static void heap_boss_gc_boehm_alloc(GC_PTR ptr, size_t size)
 
 	mono_mutex_lock(&g_heap_boss_profiler->lock);
 	g_heap_boss_gc_boehm_alloc_last_addr = ptr;
-	g_heap_boss_profiler->outfile_writer->write_boehm_allocation(ptr, size);
+
+	uint32_t stacktrace_hash = 0;
+	if (g_heap_boss_profiler->gc_stacktrace_dumping_enabled && gGetStacktraceForBossFight != NULL)
+	{
+		char stacktrace_buffer[2048] = "";
+		gGetStacktraceForBossFight(stacktrace_buffer, sizeof(stacktrace_buffer), 12); // TODO: expose max frames as setting?
+		stacktrace_hash = g_str_hash(stacktrace_buffer);
+
+		auto str = reinterpret_cast<char*>(g_hash_table_lookup(g_heap_boss_profiler->stacktrace_hash, stacktrace_buffer));
+		if (str == NULL)
+		{
+			str = _strdup(stacktrace_buffer);
+			g_hash_table_insert(g_heap_boss_profiler->stacktrace_hash, str, str);
+			g_heap_boss_profiler->outfile_writer->write_boehm_allocation_stacktrace(stacktrace_hash, str);
+		}
+	}
+
+	g_heap_boss_profiler->outfile_writer->write_boehm_allocation(ptr, size, stacktrace_hash);
 	mono_mutex_unlock(&g_heap_boss_profiler->lock);
 }
 static void heap_boss_gc_boehm_free(GC_PTR ptr, size_t size_hint)

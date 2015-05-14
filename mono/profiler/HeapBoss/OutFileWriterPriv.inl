@@ -194,6 +194,7 @@ enum {
 	cTagMonoThreadTableResize,
 	cTagMonoThreadStatics,
 	cTagBackTraceTypeLink,
+	cTagBoehmAllocStacktrace,
 	
 	cTagEos = UCHAR_MAX,
 	
