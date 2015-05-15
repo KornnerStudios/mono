@@ -42,6 +42,7 @@ public:
 	bool gc_heap_dumping_enabled;
 	bool gc_stacktrace_dumping_enabled;
 	bool should_dump_next_heap;
+	bool next_boehm_alloc_is_well_known;
 
 	mono_mutex_t   lock;
 	GHashTable*    accountant_hash;
@@ -81,6 +82,11 @@ void heap_boss_gc_boehm_free(GC_PTR ptr, size_t size_hint);
 
 static MonoProfiler* g_heap_boss_profiler;
 
+extern "C" void heap_boss_next_boehm_alloc_is_well_known()
+{
+	g_heap_boss_profiler->next_boehm_alloc_is_well_known = true;
+}
+
 static MonoProfiler* create_mono_profiler(
 	const char *outfilename)
 {
@@ -96,6 +102,7 @@ static MonoProfiler* create_mono_profiler(
 	backtrace_cache_initialize();
 
 	p->gc_stacktrace_dumping_enabled = true;
+	p->next_boehm_alloc_is_well_known = false;
 
 	p->accountant_hash = g_hash_table_new_full(NULL, NULL, NULL, MonoProfiler::accountant_hash_value_destroy);
 	p->stacktrace_hash = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, MonoProfiler::stacktrace_hash_value_destroy);
@@ -292,7 +299,7 @@ static void heap_boss_gc_boehm_alloc(GC_PTR ptr, size_t size)
 	g_heap_boss_gc_boehm_alloc_last_addr = ptr;
 
 	uint32_t stacktrace_hash = 0;
-	if (g_heap_boss_profiler->gc_stacktrace_dumping_enabled && gGetStacktraceForBossFight != NULL)
+	if (g_heap_boss_profiler->gc_stacktrace_dumping_enabled && !g_heap_boss_profiler->next_boehm_alloc_is_well_known && gGetStacktraceForBossFight != NULL)
 	{
 		char stacktrace_buffer[2048] = "";
 		gGetStacktraceForBossFight(stacktrace_buffer, sizeof(stacktrace_buffer), 12); // TODO: expose max frames as setting?
@@ -306,6 +313,7 @@ static void heap_boss_gc_boehm_alloc(GC_PTR ptr, size_t size)
 			g_heap_boss_profiler->outfile_writer->write_boehm_allocation_stacktrace(stacktrace_hash, str);
 		}
 	}
+	g_heap_boss_profiler->next_boehm_alloc_is_well_known = false;
 
 	g_heap_boss_profiler->outfile_writer->write_boehm_allocation(ptr, size, stacktrace_hash);
 	mono_mutex_unlock(&g_heap_boss_profiler->lock);

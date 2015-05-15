@@ -21,3 +21,6 @@ void heap_boss_handle_app_memory_warning();
 void heap_boss_handle_app_will_terminate();
 
 void heap_boss_handle_new_frame();
+
+// don't try to get a stacktrace on the next boehm alloc as we already track enough data about it
+extern "C" void heap_boss_next_boehm_alloc_is_well_known();

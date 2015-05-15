@@ -1876,6 +1876,7 @@ mono_class_create_runtime_vtable (MonoDomain *domain, MonoClass *class, gboolean
 			bitmap = compute_class_bitmap (class, default_bitmap, sizeof (default_bitmap) * 8, 0, &max_set, TRUE);
 			/*g_print ("bitmap 0x%x for %s.%s (size: %d)\n", bitmap [0], class->name_space, class->name, class_size);*/
 			statics_gc_descr = mono_gc_make_descr_from_bitmap (bitmap, max_set + 1);
+			heap_boss_next_boehm_alloc_is_well_known();
 			vt->data = mono_gc_alloc_fixed (class_size, statics_gc_descr);
 			mono_domain_add_class_static_data (domain, class, vt->data, NULL);
 			if (bitmap != default_bitmap)
@@ -3893,6 +3894,7 @@ mono_object_allocate (size_t size, MonoVTable *vtable)
 {
 	MonoObject *o;
 	mono_stats.new_object_count++;
+	heap_boss_next_boehm_alloc_is_well_known();
 	ALLOC_OBJECT (o, vtable, size);
 
 	return o;
@@ -3910,6 +3912,7 @@ mono_object_allocate_ptrfree (size_t size, MonoVTable *vtable)
 {
 	MonoObject *o;
 	mono_stats.new_object_count++;
+	heap_boss_next_boehm_alloc_is_well_known();
 	ALLOC_PTRFREE (o, vtable, size);
 	return o;
 }
@@ -3918,6 +3921,7 @@ static inline void *
 mono_object_allocate_spec (size_t size, MonoVTable *vtable)
 {
 	void *o;
+	heap_boss_next_boehm_alloc_is_well_known();
 	ALLOC_TYPED (o, size, vtable);
 	mono_stats.new_object_count++;
 
@@ -4012,6 +4016,7 @@ MonoObject*
 mono_object_new_fast (MonoVTable *vtable)
 {
 	MonoObject *o;
+	heap_boss_next_boehm_alloc_is_well_known();
 	ALLOC_TYPED (o, vtable->klass->instance_size, vtable);
 	return o;
 }
@@ -4020,6 +4025,7 @@ static MonoObject*
 mono_object_new_ptrfree (MonoVTable *vtable)
 {
 	MonoObject *obj;
+	heap_boss_next_boehm_alloc_is_well_known();
 	ALLOC_PTRFREE (obj, vtable, vtable->klass->instance_size);
 #if NEED_TO_ZERO_PTRFREE
 	/* an inline memset is much faster for the common vcase of small objects
@@ -4044,6 +4050,7 @@ static MonoObject*
 mono_object_new_ptrfree_box (MonoVTable *vtable)
 {
 	MonoObject *obj;
+	heap_boss_next_boehm_alloc_is_well_known();
 	ALLOC_PTRFREE (obj, vtable, vtable->klass->instance_size);
 	/* the object will be boxed right away, no need to memzero it */
 	return obj;
