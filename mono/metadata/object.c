@@ -3302,6 +3302,9 @@ mono_set_commandline_arguments(int argc, const char* argv[], const char* basedir
 	//this should only be called once
 	g_assert(main_args==NULL);
 
+	// BOSSFIGHT: moved from mono_unity_set_embeddinghostname so we can use in release builds of Unity Player
+	heap_boss_startup("heap-boss");
+
 	main_args = g_new0 (char*, argc);
 	num_main_args = argc;
 
@@ -4004,11 +4007,14 @@ mono_object_new_alloc_specific (MonoVTable *vtable)
 /*		printf("OBJECT: %s.%s.\n", vtable->klass->name_space, vtable->klass->name); */
 		o = mono_object_allocate (vtable->klass->instance_size, vtable);
 	}
-	if (G_UNLIKELY (vtable->klass->has_finalize))
-		mono_object_register_finalizer (o);
 	
 	if (G_UNLIKELY (profile_allocs))
 		mono_profiler_allocation (o, vtable->klass);
+
+	// BOSSFIGHT: moved this from before  mono_profiler_allocation as it causes a libgc allocation too (so it intereferes with boehm<->object alloc matching
+	if (G_UNLIKELY(vtable->klass->has_finalize))
+		mono_object_register_finalizer(o);
+
 	return o;
 }
 

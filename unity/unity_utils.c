@@ -107,7 +107,7 @@ void mono_unity_set_embeddinghostname(const char* name)
 	// Said func is invoked by Unity's call to mono_jit_init_version in InitializeMonoFromMain(...),
 	// but the call to this __func__ takes place only a few calls later (after mono_thread_set_main).
 	// I suppose this could also be called inside mono_thread_set_main...
-	heap_boss_startup("heap-boss");
+	//heap_boss_startup("heap-boss"); // NOTE: moved to mono_set_commandline_arguments
 }
 
 

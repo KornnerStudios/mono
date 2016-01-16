@@ -211,6 +211,12 @@ free_debug_handle (MonoDebugHandle *handle)
 	g_free (handle);
 }
 
+// BOSSFIGHT: adding for better debug (stacktrace, etc) support in release Unity Player builds
+gboolean mono_debug_is_initialized()
+{
+	return mono_debug_initialized;
+}
+
 /*
  * Initialize debugging support.
  *
@@ -221,7 +227,11 @@ free_debug_handle (MonoDebugHandle *handle)
 void
 mono_debug_init (MonoDebugFormat format)
 {
+	if (mono_debug_is_initialized() && format != mono_debug_format) // BOSSFIGHT:
 	g_assert (!mono_debug_initialized);
+
+	if (mono_debug_is_initialized() && format == mono_debug_format) // BOSSFIGHT:
+		return;
 
 	if (_mono_debug_using_mono_debugger)
 		format = MONO_DEBUG_FORMAT_DEBUGGER;

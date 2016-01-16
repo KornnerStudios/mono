@@ -181,10 +181,11 @@ get_method_from_ip (void *ip)
 	char *method;
 	char *res;
 	MonoDomain *domain = mono_domain_get ();
+	MonoDomain *target_domain = mono_domain_get(); // BOSSFIGHT: made this more like mono_print_method_from_ip
 	MonoDebugSourceLocation *location;
 	FindTrampUserData user_data;
 	
-	ji = mono_jit_info_table_find (domain, ip);
+	ji = mini_jit_info_table_find(domain, ip, &target_domain);//mono_jit_info_table_find (domain, ip);
 	if (!ji) {
 		user_data.ip = ip;
 		user_data.method = NULL;
@@ -202,9 +203,18 @@ get_method_from_ip (void *ip)
 	}
 	method = mono_method_full_name (ji->method, TRUE);
 	/* FIXME: unused ? */
-	location = mono_debug_lookup_source_location (ji->method, (guint32)((guint8*)ip - (guint8*)ji->code_start), domain);
+	location = mono_debug_lookup_source_location(ji->method, (guint32)((guint8*)ip - (guint8*)ji->code_start), target_domain);
 
-	res = g_strdup_printf (" %s + 0x%x (%p %p) [%p - %s]", method, (int)((char*)ip - (char*)ji->code_start), ji->code_start, (char*)ji->code_start + ji->code_size, domain, domain->friendly_name);
+	// BOSSFIGHT:
+	//res = g_strdup_printf (" %s + 0x%x (%p %p) [%p - %s]", 
+	//	method, (int)((char*)ip - (char*)ji->code_start), ji->code_start, (char*)ji->code_start + ji->code_size, target_domain, target_domain->friendly_name);
+	if (location != NULL)
+	{
+		res = g_strdup_printf("%s @ %s(%u)",
+			method, location->source_file, location->row);
+	}
+	else
+		res = strdup(method);
 
 	mono_debug_free_source_location (location);
 	g_free (method);

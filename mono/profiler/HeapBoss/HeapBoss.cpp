@@ -17,6 +17,7 @@ extern "C"
 #include <mono/metadata/object.h>
 #include <mono/metadata/profiler.h>
 #include <mono/metadata/mono-gc.h>
+#include <mono/metadata/mono-debug.h>
 
 #include <gc.h>
 _MonoThread* mono_thread_current();
@@ -79,6 +80,7 @@ void write_missed_vtables_hack(OutfileWriter* outfile_writer);
 static gpointer g_heap_boss_gc_boehm_alloc_last_addr;
 void heap_boss_gc_boehm_alloc(GC_PTR ptr, size_t size);
 void heap_boss_gc_boehm_free(GC_PTR ptr, size_t size_hint);
+extern "C" gboolean mono_debug_is_initialized();
 
 static MonoProfiler* g_heap_boss_profiler;
 
@@ -92,6 +94,9 @@ static MonoProfiler* create_mono_profiler(
 {
 	if (g_heap_boss_profiler != NULL)
 		return g_heap_boss_profiler;
+
+	if (!mono_debug_is_initialized())
+		mono_debug_init(MONO_DEBUG_FORMAT_MONO);
 
 	bossfight_mono_set_backtrace_callback(GetStacktrace);
 
@@ -502,6 +507,12 @@ static tm* get_current_tm()
 extern "C"
 void heap_boss_startup(const char* desc)
 {
+	if (g_heap_boss_profiler != nullptr)
+	{
+		printf("*** heap-boss already Init'd, skipping duplicate call ***\n");
+		return;
+	}
+
 #if PLATFORM_WIN32
 	MessageBoxA(NULL, "Attach debugger now", "HeapBoss", MB_OK);
 #endif
